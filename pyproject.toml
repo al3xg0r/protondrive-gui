@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protondrive-gui"
+version = "0.1.0"
+description = "Unofficial desktop GUI for the Proton Drive CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "PySide6>=6.6",
+]
+
+[project.scripts]
+protondrive-gui = "protondrive_gui.app:main"
+
+[tool.setuptools]
+packages = ["protondrive_gui"]
