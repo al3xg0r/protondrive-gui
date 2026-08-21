@@ -136,9 +136,16 @@ class ProtonDriveCLI:
         """
         subprocess.run([self.binary_path, "auth", "login"], check=False)
 
+    def auth_logout(self) -> None:
+        """Runs `auth logout`. Confirmed via `proton-drive --help` — this
+        one isn't a browser flow, so it's safe to capture normally."""
+        self._run(["auth", "logout"], json_output=False)
+
     def is_authenticated(self) -> bool:
-        """There's no documented `auth status` subcommand, so we probe
-        with a cheap list call instead."""
+        """`proton-drive --help` lists no `auth status`/`whoami` command at
+        all, so we probe with a cheap list call instead. This also means
+        there's currently no way to fetch the account name or storage
+        quota through this CLI — only a yes/no logged-in signal."""
         try:
             self.list_dir("/")
             return True
@@ -156,6 +163,42 @@ class ProtonDriveCLI:
 
     def download(self, remote_path: str, local_dir: str) -> None:
         self._run(["filesystem", "download", remote_path, local_dir], json_output=False)
+
+    # -- photos ---------------------------------------------------------------
+    #
+    # Confirmed: "filesystem list /photos" fails outright ("Path type
+    # photos is not supported") — Photos isn't part of the regular
+    # filesystem tree at all, it's a separate flat command namespace
+    # (`photo timeline` / `photo upload` / `photo download`).
+    #
+    # `photo timeline --json` returns entries like:
+    #   {"nodeUid": "...", "captureTime": "2026-08-01T05:24:49.000Z", "tags": []}
+    # No filename, no size, no path — just an opaque id + capture date.
+    # `photo download` accepts a node UID standing in for a name inside a
+    # normal path, confirmed working as "/photos/<NODE-UID>".
+
+    def list_photos(self) -> list[DriveItem]:
+        data = self._run(["photo", "timeline"])
+        items = data if isinstance(data, list) else []
+        result = []
+        for raw in items:
+            capture = raw.get("captureTime")
+            label = capture.replace("T", " ").replace(".000Z", "") if capture else raw.get(
+                "nodeUid", "?"
+            )
+            result.append(
+                DriveItem(name=label, is_folder=False, size=None, modified=capture, raw=raw)
+            )
+        return result
+
+    def photo_upload(self, local_paths: list[str]) -> None:
+        self._run(["photo", "upload", *local_paths], json_output=False)
+
+    def photo_download(self, node_uids: list[str], local_dir: str) -> None:
+        # Node UIDs stand in for a name inside a normal path — confirmed
+        # working as "/photos/<NODE-UID>".
+        paths = [f"/photos/{uid}" for uid in node_uids]
+        self._run(["photo", "download", *paths, local_dir], json_output=False)
 
     # -- helpers -----------------------------------------------------------
 

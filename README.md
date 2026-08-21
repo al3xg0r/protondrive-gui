@@ -14,10 +14,12 @@ A minimal desktop GUI wrapper around the official [Proton Drive CLI](https://pro
 
 Early / minimal. Currently supports:
 
-- Browsing folders (double-click to open, "Up" to go back)
+- Browsing folders (double-click to open, "Back" to go back — disabled at the root)
 - Uploading files into the current folder
 - Downloading selected files/folders to a local directory
-- Triggering `auth login` (opens your browser)
+- Log in / log out (`auth login` opens your browser, `auth logout` is instant)
+- Separate "My files" and "Photos" sections — Photos is a flat, most-recent-first
+  timeline (no folders, no file size — that's just what the CLI exposes for it)
 
 Not yet implemented (see [Roadmap](#roadmap)): delete, rename, new folder, search,
 sharing, drag & drop, upload/download progress bars, multi-select bulk actions,
@@ -94,13 +96,22 @@ Pull requests fixing this for real-world output are very welcome.
 - [ ] Remember last-visited folder / window state
 - [ ] Packaging (AppImage / Flatpak)
 - [ ] Dark/light theme following system settings
+- [ ] Show logged-in account + storage quota (not currently possible — `proton-drive --help` exposes no account/whoami/quota command, only `auth login` / `auth logout`)
+- [ ] One-shot installer (fetch CLI, install system deps, set up venv,
+      install desktop entry) instead of today's multi-step manual setup
 
 ## Contributing
 
-Issues and PRs welcome. The GUI layer (`main_window.py`) and the CLI wrapper
-(`cli.py`) are kept separate on purpose — most new features only need changes
-in one of the two.
+Issues and PRs welcome. The GUI layer (`gui/main_window.py`) and the CLI
+wrapper (`gui/cli.py`) are kept separate on purpose — most new features only
+need changes in one of the two.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Don't have a Proton account yet? This app (and Proton Drive itself) is free —
+if you sign up via [my referral link](https://pr.tn/ref/H3Y6DHT7) it costs
+you nothing extra and gives me a little credit. Totally optional.
