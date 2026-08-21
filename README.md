@@ -6,6 +6,10 @@ A minimal desktop GUI wrapper around the official [Proton Drive CLI](https://pro
 > the official `proton-drive` binary — it doesn't reimplement any Proton Drive
 > protocol or touch your credentials directly.
 
+> **Linux only.** Built and tested on Linux. PySide6 is technically
+> cross-platform, so it may run on Windows/macOS with some tweaks, but that's
+> untested and unsupported for now.
+
 ## Status
 
 Early / minimal. Currently supports:
@@ -21,7 +25,7 @@ packaging as an AppImage.
 
 ## Requirements
 
-- Linux (developed/tested here; PySide6 is cross-platform so Windows/macOS likely work too, untested)
+- Linux
 - Python 3.10+
 - The official [Proton Drive CLI](https://proton.me/drive/download), installed and on your `PATH` as `proton-drive`
 
@@ -41,7 +45,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 4. Run
-python -m protondrive_gui
+python -m gui
 ```
 
 Or, install it as a proper package:
@@ -67,7 +71,7 @@ any other installed app.
 ## A note on the JSON schema
 
 The Proton Drive CLI supports a `--json` flag but Proton hasn't published one
-single documented schema for its output. `protondrive_gui/cli.py` normalizes
+single documented schema for its output. `gui/cli.py` normalizes
 a handful of common field-name variants (`name`/`Name`, `size`/`Size`, etc.).
 
 If items show up with missing names/sizes on your CLI version, run:
@@ -77,7 +81,7 @@ proton-drive filesystem list / --json
 ```
 
 ...and compare the raw output to `ProtonDriveCLI._normalize_item()` in
-`protondrive_gui/cli.py` — that's the only place that should need adjusting.
+`gui/cli.py` — that's the only place that should need adjusting.
 Pull requests fixing this for real-world output are very welcome.
 
 ## Roadmap

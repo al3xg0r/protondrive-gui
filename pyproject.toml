@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-protondrive-gui = "protondrive_gui.app:main"
+protondrive-gui = "gui.app:main"
 
 [tool.setuptools]
-packages = ["protondrive_gui"]
+packages = ["gui"]
