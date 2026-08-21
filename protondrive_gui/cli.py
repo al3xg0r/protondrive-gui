@@ -21,7 +21,7 @@ import json
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
 
@@ -181,16 +181,60 @@ class ProtonDriveCLI:
                     return raw[k]
             return default
 
-        name = pick("name", "Name", "filename", "fileName", default="?")
+        # Confirmed schema (CLI 0.x):
+        #
+        # Root listing "/": entries only carry a "path" field, e.g.
+        # {"path": "/my-files"} — these are the virtual top-level sections
+        # (my-files, devices, photos, shared-*, trash, albums), not real
+        # files. The GUI skips this level entirely (see HOME_PATH in
+        # main_window.py) so this branch mainly matters if someone calls
+        # list_dir("/") directly.
+        #
+        # Listing inside e.g. "/my-files": real files/folders, where:
+        #   - "name" is an object {"ok": true, "value": "..."} — wrapped
+        #     because names are end-to-end encrypted and decrypted
+        #     client-side; "ok" reflects whether decryption succeeded.
+        #   - "type" is "folder" or "file".
+        #   - folders carry no size field at all.
+        #   - files carry "totalStorageSize" (encrypted size on Proton's
+        #     servers, inflated by encryption overhead) and, nested under
+        #     "activeRevision", "claimedSize" (the real original file size)
+        #     and "storageSize". We prefer claimedSize since that's what a
+        #     user actually expects to see.
+        name = pick("name", "Name", "filename", "fileName")
+        if isinstance(name, dict):
+            name = name.get("value") if name.get("ok", True) else "<undecryptable name>"
+        if name is None:
+            path_value = pick("path", "Path", default="")
+            name = PurePosixPath(str(path_value)).name or str(path_value) or "?"
+
         item_type = pick("type", "Type", default="")
-        is_folder = pick("isFolder", "is_dir", "isDir", "folder", default=None)
-        if is_folder is None:
-            is_folder = str(item_type).lower() in ("folder", "dir", "directory")
+        if item_type:
+            is_folder = str(item_type).lower() == "folder"
+        else:
+            # No "type" at all -> a root-level virtual section.
+            is_folder = "path" in raw or "Path" in raw
+
+        active_revision = raw.get("activeRevision")
+        if not isinstance(active_revision, dict):
+            active_revision = {}
+
+        size = pick("size", "Size", "fileSize")
+        if size is None:
+            size = active_revision.get("claimedSize")
+        if size is None:
+            size = pick("totalStorageSize")
+        if size is None:
+            size = active_revision.get("storageSize")
+
+        modified = pick(
+            "modificationTime", "modified", "modifiedTime", "updatedAt", "mtime", "modifiedAt"
+        )
 
         return DriveItem(
             name=name,
             is_folder=bool(is_folder),
-            size=pick("size", "Size", "fileSize"),
-            modified=pick("modified", "modifiedTime", "updatedAt", "mtime", "modifiedAt"),
+            size=size,
+            modified=modified,
             raw=raw,
         )

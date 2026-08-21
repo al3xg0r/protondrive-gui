@@ -40,6 +40,16 @@ def human_size(n) -> str:
     return f"{n:.1f} PB"
 
 
+# The CLI's root listing ("/") only shows Proton's virtual top-level
+# sections (my-files, devices, photos, shared-by-me, shared-with-me,
+# trash, albums, ...) rather than actual files, and not all of them
+# necessarily behave like a normal browsable folder. For a "what's
+# actually on my disk" experience we skip that level and treat
+# "/my-files" as home. (Browsing the other sections — trash, shared,
+# photos — is a good candidate for a sidebar in a future version.)
+HOME_PATH = "/my-files"
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -48,7 +58,7 @@ class MainWindow(QMainWindow):
 
         self.thread_pool = QThreadPool()
         self.cli: ProtonDriveCLI | None = None
-        self.current_path = "/"
+        self.current_path = HOME_PATH
         self.items: list[DriveItem] = []
 
         self._build_ui()
@@ -64,6 +74,10 @@ class MainWindow(QMainWindow):
         self.up_action = QAction("\u2b06 Up", self)
         self.up_action.triggered.connect(self.go_up)
         toolbar.addAction(self.up_action)
+
+        self.home_action = QAction("\U0001f3e0 Home", self)
+        self.home_action.triggered.connect(lambda: self.navigate_to(HOME_PATH))
+        toolbar.addAction(self.home_action)
 
         self.refresh_action = QAction("\u27f3 Refresh", self)
         self.refresh_action.triggered.connect(self.refresh)
@@ -90,7 +104,7 @@ class MainWindow(QMainWindow):
 
         path_row = QHBoxLayout()
         path_row.addWidget(QLabel("Path:"))
-        self.path_edit = QLineEdit(self.current_path)
+        self.path_edit = QLineEdit(self._display_path(self.current_path))
         self.path_edit.returnPressed.connect(self._path_edited)
         path_row.addWidget(self.path_edit)
         layout.addLayout(path_row)
@@ -117,18 +131,42 @@ class MainWindow(QMainWindow):
 
     # -- navigation ------------------------------------------------------------
 
+    @staticmethod
+    def _display_path(actual_path: str) -> str:
+        """Show paths rooted at "/" in the UI even though the CLI's real
+        root for user files is "/my-files" — users shouldn't have to know
+        or type that prefix."""
+        if actual_path == HOME_PATH:
+            return "/"
+        if actual_path.startswith(HOME_PATH + "/"):
+            return actual_path[len(HOME_PATH):]
+        return actual_path
+
+    @staticmethod
+    def _actual_path(display_path: str) -> str:
+        display_path = display_path.strip() or "/"
+        if not display_path.startswith("/"):
+            display_path = f"/{display_path}"
+        if display_path == "/":
+            return HOME_PATH
+        return HOME_PATH + display_path
+
     def _path_edited(self):
-        self.navigate_to(self.path_edit.text().strip() or "/")
+        self.navigate_to(self._actual_path(self.path_edit.text()))
 
     def navigate_to(self, path: str):
         self.current_path = path if path.startswith("/") else f"/{path}"
-        self.path_edit.setText(self.current_path)
+        self.path_edit.setText(self._display_path(self.current_path))
         self.refresh()
 
     def go_up(self):
-        if self.current_path in ("/", ""):
+        if self.current_path in ("/", "", HOME_PATH):
             return
         parent = str(PurePosixPath(self.current_path).parent)
+        # Never let "Up" escape above home into the raw virtual-section
+        # root ("/my-files", "/devices", ...) — clamp there instead.
+        if not (parent + "/").startswith(HOME_PATH + "/") and parent != HOME_PATH:
+            parent = HOME_PATH
         self.navigate_to(parent)
 
     def _row_double_clicked(self, row: int, _col: int):

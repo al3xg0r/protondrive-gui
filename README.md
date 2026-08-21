@@ -51,6 +51,19 @@ pip install -e .
 protondrive-gui
 ```
 
+## Desktop launcher (no terminal needed after setup)
+
+Once you've done `pip install -e .` inside `.venv` (above), add a clickable
+launcher to your application menu:
+
+```bash
+./scripts/install-desktop-entry.sh
+```
+
+This installs `~/.local/share/applications/protondrive-gui.desktop` pointing
+at your venv, so "Proton Drive GUI" shows up in your app launcher/dock like
+any other installed app.
+
 ## A note on the JSON schema
 
 The Proton Drive CLI supports a `--json` flag but Proton hasn't published one
