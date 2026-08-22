@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 
 from PySide6.QtCore import Qt, QThreadPool
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QStatusBar,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
@@ -70,6 +71,18 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._init_cli()
 
+    # -- icons ------------------------------------------------------------
+
+    def _icon(self, theme_names: list[str], fallback: QStyle.StandardPixmap) -> QIcon:
+        """Prefer a monochrome icon from the system theme (symbolic names
+        first); fall back to Qt's built-in standard icon, which is always
+        available and also flat/monochrome."""
+        for name in theme_names:
+            icon = QIcon.fromTheme(name)
+            if not icon.isNull():
+                return icon
+        return self.style().standardIcon(fallback)
+
     # -- setup ---------------------------------------------------------------
 
     def _build_ui(self):
@@ -77,46 +90,87 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        self.back_action = QAction("\u2190 Back", self)
+        self.back_action = QAction(
+            self._icon(["go-previous-symbolic", "go-previous"], QStyle.SP_ArrowBack), "Back", self
+        )
         self.back_action.triggered.connect(self.go_up)
         self.back_action.setEnabled(False)  # we start at the root
         toolbar.addAction(self.back_action)
 
-        self.refresh_action = QAction("\u27f3 Refresh", self)
+        self.refresh_action = QAction(
+            self._icon(["view-refresh-symbolic", "view-refresh"], QStyle.SP_BrowserReload),
+            "Refresh",
+            self,
+        )
         self.refresh_action.triggered.connect(self.refresh)
         toolbar.addAction(self.refresh_action)
 
         toolbar.addSeparator()
 
-        self.my_files_action = QAction("\U0001f4c2 My files", self)
+        self.my_files_action = QAction(
+            self._icon(["folder-symbolic", "folder"], QStyle.SP_DirIcon), "My files", self
+        )
         self.my_files_action.triggered.connect(lambda: self.switch_root(MY_FILES_ROOT))
         toolbar.addAction(self.my_files_action)
 
-        self.photos_action = QAction("\U0001f5bc Photos", self)
+        self.photos_action = QAction(
+            self._icon(
+                ["folder-pictures-symbolic", "camera-photo-symbolic", "folder-pictures"],
+                QStyle.SP_FileIcon,
+            ),
+            "Photos",
+            self,
+        )
         self.photos_action.triggered.connect(lambda: self.switch_root(PHOTOS_ROOT))
         toolbar.addAction(self.photos_action)
 
         toolbar.addSeparator()
 
-        self.upload_action = QAction("\u2b06 Upload files\u2026", self)
+        self.upload_action = QAction(
+            self._icon(["document-send-symbolic", "go-up-symbolic"], QStyle.SP_ArrowUp),
+            "Upload files\u2026",
+            self,
+        )
         self.upload_action.triggered.connect(self.upload_files)
         toolbar.addAction(self.upload_action)
 
-        self.download_action = QAction("\u2b07 Download selected", self)
+        self.download_action = QAction(
+            self._icon(["document-save-symbolic", "go-down-symbolic"], QStyle.SP_ArrowDown),
+            "Download selected",
+            self,
+        )
         self.download_action.triggered.connect(self.download_selected)
         toolbar.addAction(self.download_action)
 
         toolbar.addSeparator()
 
-        self.login_action = QAction("Log in\u2026", self)
+        self._login_icon = self._icon(
+            ["system-log-in-symbolic", "system-log-in"], QStyle.SP_DialogOkButton
+        )
+        self._logout_icon = self._icon(
+            ["system-log-out-symbolic", "system-log-out"], QStyle.SP_DialogCloseButton
+        )
+        self.login_action = QAction(self._login_icon, "Log in\u2026", self)
         self.login_action.triggered.connect(self.toggle_auth)
         toolbar.addAction(self.login_action)
 
         toolbar.addSeparator()
 
-        self.about_action = QAction("About", self)
+        self.about_action = QAction(
+            self._icon(["help-about-symbolic", "help-about"], QStyle.SP_MessageBoxInformation),
+            "About",
+            self,
+        )
         self.about_action.triggered.connect(self.show_about)
         toolbar.addAction(self.about_action)
+
+        self._row_folder_icon = self._icon(["folder-symbolic", "folder"], QStyle.SP_DirIcon)
+        self._row_file_icon = self._icon(
+            ["text-x-generic-symbolic", "text-x-generic"], QStyle.SP_FileIcon
+        )
+        self._row_photo_icon = self._icon(
+            ["image-x-generic-symbolic", "image-x-generic"], QStyle.SP_FileIcon
+        )
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -146,8 +200,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "proton-drive not found", str(e))
             self.statusBar().showMessage("proton-drive CLI not found", 5000)
             return
-        self._refresh_auth_state()
-        self.refresh()
+        self._refresh_auth_state(then_refresh=True)
 
     # -- navigation ------------------------------------------------------------
 
@@ -224,16 +277,18 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(len(self.items))
         for row, item in enumerate(self.items):
             if item.is_folder:
-                prefix = "\U0001f4c1 "
+                icon = self._row_folder_icon
             elif self.current_root == PHOTOS_ROOT:
-                prefix = "\U0001f5bc "
+                icon = self._row_photo_icon
             else:
-                prefix = "\U0001f4c4 "
-            self.table.setItem(row, 0, QTableWidgetItem(prefix + item.name))
+                icon = self._row_file_icon
+            name_item = QTableWidgetItem(item.name)
+            name_item.setIcon(icon)
+            self.table.setItem(row, 0, name_item)
             size_text = "" if item.is_folder else human_size(item.size)
             self.table.setItem(row, 1, QTableWidgetItem(size_text))
             self.table.setItem(row, 2, QTableWidgetItem(item.modified or ""))
-        self.statusBar().showMessage(f"{len(self.items)} item(s)", 3000)
+        self.statusBar().showMessage(f"{len(self.items)} file(s)", 3000)
 
     def _on_error(self, message: str):
         self.statusBar().showMessage("Error", 3000)
@@ -241,7 +296,7 @@ class MainWindow(QMainWindow):
 
     # -- auth ------------------------------------------------------------------
 
-    def _refresh_auth_state(self):
+    def _refresh_auth_state(self, then_refresh: bool = False):
         """Proton Drive CLI has no `auth status`/`whoami` command, so this
         just probes with a cheap list call and reflects yes/no logged-in —
         there's currently no way to show an account name or storage quota
@@ -249,13 +304,23 @@ class MainWindow(QMainWindow):
         if not self.cli:
             return
         worker = Worker(self.cli.is_authenticated)
-        worker.signals.finished.connect(self._set_auth_ui)
-        worker.signals.error.connect(lambda _: self._set_auth_ui(False))
+        worker.signals.finished.connect(lambda ok: self._on_auth_checked(ok, then_refresh))
+        worker.signals.error.connect(lambda _: self._on_auth_checked(False, then_refresh))
         self.thread_pool.start(worker)
+
+    def _on_auth_checked(self, logged_in: bool, then_refresh: bool):
+        self._set_auth_ui(logged_in)
+        if logged_in:
+            if then_refresh:
+                self.refresh()
+        else:
+            self.table.setRowCount(0)
+            self.statusBar().showMessage('Not logged in — click "Log in…" to continue.', 6000)
 
     def _set_auth_ui(self, logged_in: bool):
         self.is_logged_in = logged_in
         self.login_action.setText("Log out" if logged_in else "Log in\u2026")
+        self.login_action.setIcon(self._logout_icon if logged_in else self._login_icon)
 
     def toggle_auth(self):
         self.logout() if self.is_logged_in else self.login()
@@ -265,7 +330,7 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage("Opening browser for login \u2026")
         worker = Worker(self.cli.auth_login)
-        worker.signals.finished.connect(lambda _: (self._refresh_auth_state(), self.refresh()))
+        worker.signals.finished.connect(lambda _: self._refresh_auth_state(then_refresh=True))
         worker.signals.error.connect(self._on_error)
         self.thread_pool.start(worker)
 
@@ -274,7 +339,7 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage("Logging out \u2026")
         worker = Worker(self.cli.auth_logout)
-        worker.signals.finished.connect(lambda _: self._set_auth_ui(False))
+        worker.signals.finished.connect(lambda _: self._on_auth_checked(False, False))
         worker.signals.error.connect(self._on_error)
         self.thread_pool.start(worker)
 

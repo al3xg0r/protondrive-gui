@@ -97,6 +97,12 @@ class ProtonDriveCLI:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                # Explicitly close stdin: if the CLI ever prompts for
+                # interactive confirmation (observed: `auth logout` can
+                # hang waiting on input that a GUI can never provide),
+                # this makes it hit EOF immediately instead of blocking
+                # forever. The timeout above is a second safety net.
+                stdin=subprocess.DEVNULL,
             )
         except FileNotFoundError as e:
             raise ProtonDriveNotFoundError(str(e)) from e
