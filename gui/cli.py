@@ -134,13 +134,23 @@ class ProtonDriveCLI:
     # -- auth ---------------------------------------------------------------
 
     def auth_login(self) -> None:
-        """Runs `auth login`, which opens a browser for the user to authenticate.
-
-        Deliberately not using --json / capture_output here: this is an
-        interactive flow, and we want it to behave like it would in a
-        normal terminal.
-        """
-        subprocess.run([self.binary_path, "auth", "login"], check=False)
+        """Runs `auth login`, which opens a browser for the user to
+        authenticate. stdin is closed (like every other call) so a launch
+        via a .desktop icon — which may hand the process a broken/closed
+        stdin rather than a real terminal — can't cause a silent hang; a
+        generous timeout is a second safety net for a stuck flow."""
+        try:
+            subprocess.run(
+                [self.binary_path, "auth", "login"],
+                check=False,
+                stdin=subprocess.DEVNULL,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise ProtonDriveError(
+                "Login timed out after 5 minutes. Try running "
+                "'proton-drive auth login' directly from a terminal instead."
+            ) from e
 
     def auth_logout(self) -> None:
         """Runs `auth logout`. Confirmed via `proton-drive --help` — this

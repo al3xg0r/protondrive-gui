@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 
 from PySide6.QtCore import Qt, QThreadPool
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QPalette
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QStatusBar,
-    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
@@ -24,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
+from .icons import DRAWERS, make_icon
 from .workers import Worker
 
 REFERRAL_URL = "https://pr.tn/ref/H3Y6DHT7"
@@ -73,15 +73,9 @@ class MainWindow(QMainWindow):
 
     # -- icons ------------------------------------------------------------
 
-    def _icon(self, theme_names: list[str], fallback: QStyle.StandardPixmap) -> QIcon:
-        """Prefer a monochrome icon from the system theme (symbolic names
-        first); fall back to Qt's built-in standard icon, which is always
-        available and also flat/monochrome."""
-        for name in theme_names:
-            icon = QIcon.fromTheme(name)
-            if not icon.isNull():
-                return icon
-        return self.style().standardIcon(fallback)
+    def _icon(self, name: str, size: int = 20) -> QIcon:
+        color = self.palette().color(QPalette.WindowText)
+        return make_icon(DRAWERS[name], color, size)
 
     # -- setup ---------------------------------------------------------------
 
@@ -90,87 +84,52 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        self.back_action = QAction(
-            self._icon(["go-previous-symbolic", "go-previous"], QStyle.SP_ArrowBack), "Back", self
-        )
+        self.back_action = QAction(self._icon("back"), "Back", self)
         self.back_action.triggered.connect(self.go_up)
         self.back_action.setEnabled(False)  # we start at the root
         toolbar.addAction(self.back_action)
 
-        self.refresh_action = QAction(
-            self._icon(["view-refresh-symbolic", "view-refresh"], QStyle.SP_BrowserReload),
-            "Refresh",
-            self,
-        )
+        self.refresh_action = QAction(self._icon("refresh"), "Refresh", self)
         self.refresh_action.triggered.connect(self.refresh)
         toolbar.addAction(self.refresh_action)
 
         toolbar.addSeparator()
 
-        self.my_files_action = QAction(
-            self._icon(["folder-symbolic", "folder"], QStyle.SP_DirIcon), "My files", self
-        )
+        self.my_files_action = QAction(self._icon("folder"), "My files", self)
         self.my_files_action.triggered.connect(lambda: self.switch_root(MY_FILES_ROOT))
         toolbar.addAction(self.my_files_action)
 
-        self.photos_action = QAction(
-            self._icon(
-                ["folder-pictures-symbolic", "camera-photo-symbolic", "folder-pictures"],
-                QStyle.SP_FileIcon,
-            ),
-            "Photos",
-            self,
-        )
+        self.photos_action = QAction(self._icon("photos"), "Photos", self)
         self.photos_action.triggered.connect(lambda: self.switch_root(PHOTOS_ROOT))
         toolbar.addAction(self.photos_action)
 
         toolbar.addSeparator()
 
-        self.upload_action = QAction(
-            self._icon(["document-send-symbolic", "go-up-symbolic"], QStyle.SP_ArrowUp),
-            "Upload files\u2026",
-            self,
-        )
+        self.upload_action = QAction(self._icon("upload"), "Upload files\u2026", self)
         self.upload_action.triggered.connect(self.upload_files)
         toolbar.addAction(self.upload_action)
 
-        self.download_action = QAction(
-            self._icon(["document-save-symbolic", "go-down-symbolic"], QStyle.SP_ArrowDown),
-            "Download selected",
-            self,
-        )
+        self.download_action = QAction(self._icon("download"), "Download selected", self)
         self.download_action.triggered.connect(self.download_selected)
         toolbar.addAction(self.download_action)
 
         toolbar.addSeparator()
 
-        self._login_icon = self._icon(
-            ["system-log-in-symbolic", "system-log-in"], QStyle.SP_DialogOkButton
-        )
-        self._logout_icon = self._icon(
-            ["system-log-out-symbolic", "system-log-out"], QStyle.SP_DialogCloseButton
-        )
+        self._login_icon = self._icon("login")
+        self._logout_icon = self._icon("logout")
         self.login_action = QAction(self._login_icon, "Log in\u2026", self)
         self.login_action.triggered.connect(self.toggle_auth)
         toolbar.addAction(self.login_action)
 
         toolbar.addSeparator()
 
-        self.about_action = QAction(
-            self._icon(["help-about-symbolic", "help-about"], QStyle.SP_MessageBoxInformation),
-            "About",
-            self,
-        )
+        self.about_action = QAction(self._icon("about"), "About", self)
         self.about_action.triggered.connect(self.show_about)
         toolbar.addAction(self.about_action)
 
-        self._row_folder_icon = self._icon(["folder-symbolic", "folder"], QStyle.SP_DirIcon)
-        self._row_file_icon = self._icon(
-            ["text-x-generic-symbolic", "text-x-generic"], QStyle.SP_FileIcon
-        )
-        self._row_photo_icon = self._icon(
-            ["image-x-generic-symbolic", "image-x-generic"], QStyle.SP_FileIcon
-        )
+        self._row_folder_icon = self._icon("folder", size=16)
+        self._row_file_icon = self._icon("file", size=16)
+        self._row_photo_icon = self._icon("photos", size=16)
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -285,8 +244,11 @@ class MainWindow(QMainWindow):
             name_item = QTableWidgetItem(item.name)
             name_item.setIcon(icon)
             self.table.setItem(row, 0, name_item)
-            size_text = "" if item.is_folder else human_size(item.size)
-            self.table.setItem(row, 1, QTableWidgetItem(size_text))
+            size_text = "\u2014" if item.is_folder else human_size(item.size)
+            size_item = QTableWidgetItem(size_text)
+            if item.is_folder:
+                size_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 1, size_item)
             self.table.setItem(row, 2, QTableWidgetItem(item.modified or ""))
         self.statusBar().showMessage(f"{len(self.items)} file(s)", 3000)
 
@@ -323,6 +285,7 @@ class MainWindow(QMainWindow):
         self.login_action.setIcon(self._logout_icon if logged_in else self._login_icon)
 
     def toggle_auth(self):
+        self.login_action.setEnabled(False)
         self.logout() if self.is_logged_in else self.login()
 
     def login(self):
@@ -330,8 +293,13 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage("Opening browser for login \u2026")
         worker = Worker(self.cli.auth_login)
-        worker.signals.finished.connect(lambda _: self._refresh_auth_state(then_refresh=True))
-        worker.signals.error.connect(self._on_error)
+        worker.signals.finished.connect(
+            lambda _: (
+                self.login_action.setEnabled(True),
+                self._refresh_auth_state(then_refresh=True),
+            )
+        )
+        worker.signals.error.connect(self._on_auth_action_error)
         self.thread_pool.start(worker)
 
     def logout(self):
@@ -339,9 +307,15 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage("Logging out \u2026")
         worker = Worker(self.cli.auth_logout)
-        worker.signals.finished.connect(lambda _: self._on_auth_checked(False, False))
-        worker.signals.error.connect(self._on_error)
+        worker.signals.finished.connect(
+            lambda _: (self.login_action.setEnabled(True), self._on_auth_checked(False, False))
+        )
+        worker.signals.error.connect(self._on_auth_action_error)
         self.thread_pool.start(worker)
+
+    def _on_auth_action_error(self, message: str):
+        self.login_action.setEnabled(True)
+        self._on_error(message)
 
     # -- about / referral --------------------------------------------------------
 
