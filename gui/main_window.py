@@ -62,6 +62,17 @@ class MainWindow(QMainWindow):
         self.resize(920, 600)
 
         self.thread_pool = QThreadPool()
+        # PySide6 gotcha: a QRunnable handed to QThreadPool.start() can be
+        # garbage-collected by Python before the pool is done with it if
+        # nothing else holds a reference (the local `worker` variable in
+        # the calling method goes out of scope immediately). When the pool
+        # thread then tries to call back into a half-collected Python
+        # object, it segfaults rather than raising a catchable exception —
+        # this was very likely the cause of the crash/hang seen after
+        # login. Every in-flight worker is kept here until it reports
+        # finished/error, guaranteeing it stays alive for the whole call.
+        self._active_workers: list[Worker] = []
+
         self.cli: ProtonDriveCLI | None = None
         self.current_root = MY_FILES_ROOT
         self.current_path = MY_FILES_ROOT
@@ -70,6 +81,35 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._init_cli()
+
+    # -- worker helper -------------------------------------------------------
+
+    def _start_worker(self, fn, *args, on_finished=None, on_error=None, **kwargs):
+        """Run fn(*args, **kwargs) on a background thread and keep a
+        reference to the worker alive until it's done (see note in
+        __init__ about why that's required)."""
+        worker = Worker(fn, *args, **kwargs)
+        self._active_workers.append(worker)
+
+        def _cleanup():
+            try:
+                self._active_workers.remove(worker)
+            except ValueError:
+                pass
+
+        def _handle_finished(result):
+            _cleanup()
+            if on_finished:
+                on_finished(result)
+
+        def _handle_error(message):
+            _cleanup()
+            (on_error or self._on_error)(message)
+
+        worker.signals.finished.connect(_handle_finished)
+        worker.signals.error.connect(_handle_error)
+        self.thread_pool.start(worker)
+        return worker
 
     # -- icons ------------------------------------------------------------
 
@@ -82,6 +122,7 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.addToolBar(toolbar)
 
         self.back_action = QAction(self._icon("back"), "Back", self)
@@ -220,12 +261,11 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(f"Loading {self.current_path} \u2026")
         if self.current_root == PHOTOS_ROOT:
-            worker = Worker(self.cli.list_photos)
+            self._start_worker(self.cli.list_photos, on_finished=self._on_list_loaded)
         else:
-            worker = Worker(self.cli.list_dir, self.current_path)
-        worker.signals.finished.connect(self._on_list_loaded)
-        worker.signals.error.connect(self._on_error)
-        self.thread_pool.start(worker)
+            self._start_worker(
+                self.cli.list_dir, self.current_path, on_finished=self._on_list_loaded
+            )
 
     def _on_list_loaded(self, items: list[DriveItem]):
         if self.current_root == PHOTOS_ROOT:
@@ -265,10 +305,11 @@ class MainWindow(QMainWindow):
         through this CLI."""
         if not self.cli:
             return
-        worker = Worker(self.cli.is_authenticated)
-        worker.signals.finished.connect(lambda ok: self._on_auth_checked(ok, then_refresh))
-        worker.signals.error.connect(lambda _: self._on_auth_checked(False, then_refresh))
-        self.thread_pool.start(worker)
+        self._start_worker(
+            self.cli.is_authenticated,
+            on_finished=lambda ok: self._on_auth_checked(ok, then_refresh),
+            on_error=lambda _: self._on_auth_checked(False, then_refresh),
+        )
 
     def _on_auth_checked(self, logged_in: bool, then_refresh: bool):
         self._set_auth_ui(logged_in)
@@ -292,30 +333,31 @@ class MainWindow(QMainWindow):
         if not self.cli:
             return
         self.statusBar().showMessage("Opening browser for login \u2026")
-        worker = Worker(self.cli.auth_login)
-        worker.signals.finished.connect(
-            lambda _: (
-                self.login_action.setEnabled(True),
-                self._refresh_auth_state(then_refresh=True),
-            )
-        )
-        worker.signals.error.connect(self._on_auth_action_error)
-        self.thread_pool.start(worker)
+
+        def _done(_):
+            self.login_action.setEnabled(True)
+            self._refresh_auth_state(then_refresh=True)
+
+        def _err(message):
+            self.login_action.setEnabled(True)
+            self._on_error(message)
+
+        self._start_worker(self.cli.auth_login, on_finished=_done, on_error=_err)
 
     def logout(self):
         if not self.cli:
             return
         self.statusBar().showMessage("Logging out \u2026")
-        worker = Worker(self.cli.auth_logout)
-        worker.signals.finished.connect(
-            lambda _: (self.login_action.setEnabled(True), self._on_auth_checked(False, False))
-        )
-        worker.signals.error.connect(self._on_auth_action_error)
-        self.thread_pool.start(worker)
 
-    def _on_auth_action_error(self, message: str):
-        self.login_action.setEnabled(True)
-        self._on_error(message)
+        def _done(_):
+            self.login_action.setEnabled(True)
+            self._on_auth_checked(False, False)
+
+        def _err(message):
+            self.login_action.setEnabled(True)
+            self._on_error(message)
+
+        self._start_worker(self.cli.auth_logout, on_finished=_done, on_error=_err)
 
     # -- about / referral --------------------------------------------------------
 
@@ -347,12 +389,13 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(f"Uploading {len(paths)} file(s) \u2026")
         if self.current_root == PHOTOS_ROOT:
-            worker = Worker(self.cli.photo_upload, paths)
+            self._start_worker(
+                self.cli.photo_upload, paths, on_finished=lambda _: self.refresh()
+            )
         else:
-            worker = Worker(self.cli.upload, paths, self.current_path)
-        worker.signals.finished.connect(lambda _: self.refresh())
-        worker.signals.error.connect(self._on_error)
-        self.thread_pool.start(worker)
+            self._start_worker(
+                self.cli.upload, paths, self.current_path, on_finished=lambda _: self.refresh()
+            )
 
     def download_selected(self):
         if not self.cli:
@@ -362,10 +405,14 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Nothing selected", "Select one or more items first.")
             return
 
+        target_dir = QFileDialog.getExistingDirectory(self, "Download to\u2026")
+        if not target_dir:
+            return
+
+        def _done(_):
+            self.statusBar().showMessage("Download complete", 3000)
+
         if self.current_root == PHOTOS_ROOT:
-            target_dir = QFileDialog.getExistingDirectory(self, "Download to\u2026")
-            if not target_dir:
-                return
             node_uids = [
                 self.items[row].raw.get("nodeUid")
                 for row in rows
@@ -373,24 +420,12 @@ class MainWindow(QMainWindow):
             ]
             if not node_uids:
                 return
-            worker = Worker(self.cli.photo_download, node_uids, target_dir)
-            worker.signals.finished.connect(
-                lambda _: self.statusBar().showMessage("Download complete", 3000)
+            self._start_worker(
+                self.cli.photo_download, node_uids, target_dir, on_finished=_done
             )
-            worker.signals.error.connect(self._on_error)
-            self.thread_pool.start(worker)
-            return
-
-        target_dir = QFileDialog.getExistingDirectory(self, "Download to\u2026")
-        if not target_dir:
             return
 
         for row in rows:
             item = self.items[row]
             remote_path = f"{self.current_path.rstrip('/')}/{item.name}"
-            worker = Worker(self.cli.download, remote_path, target_dir)
-            worker.signals.finished.connect(
-                lambda _: self.statusBar().showMessage("Download complete", 3000)
-            )
-            worker.signals.error.connect(self._on_error)
-            self.thread_pool.start(worker)
+            self._start_worker(self.cli.download, remote_path, target_dir, on_finished=_done)
