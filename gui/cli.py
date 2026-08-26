@@ -180,6 +180,18 @@ class ProtonDriveCLI:
     def download(self, remote_path: str, local_dir: str) -> None:
         self._run(["filesystem", "download", remote_path, local_dir], json_output=False)
 
+    def create_folder(self, parent_path: str, name: str) -> None:
+        self._run(["filesystem", "create-folder", parent_path, name], json_output=False)
+
+    def rename(self, path: str, new_name: str) -> None:
+        self._run(["filesystem", "rename", path, new_name], json_output=False)
+
+    def trash(self, paths: list[str]) -> None:
+        """Moves items to Trash (reversible from within Proton Drive) —
+        deliberately not wired to the CLI's separate, permanent
+        `filesystem delete` command."""
+        self._run(["filesystem", "trash", *paths], json_output=False)
+
     # -- photos ---------------------------------------------------------------
     #
     # Confirmed: "filesystem list /photos" fails outright ("Path type

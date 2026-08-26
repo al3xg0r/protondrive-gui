@@ -10,9 +10,11 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QStatusBar,
     QTableWidget,
@@ -146,6 +148,12 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
+        self.new_folder_action = QAction(self._icon("new_folder"), "New folder\u2026", self)
+        self.new_folder_action.triggered.connect(self.create_folder)
+        toolbar.addAction(self.new_folder_action)
+
+        toolbar.addSeparator()
+
         self.upload_action = QAction(self._icon("upload"), "Upload files\u2026", self)
         self.upload_action.triggered.connect(self.upload_files)
         toolbar.addAction(self.upload_action)
@@ -188,6 +196,8 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.cellDoubleClicked.connect(self._row_double_clicked)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         layout.addWidget(self.table)
 
         self.setCentralWidget(central)
@@ -227,6 +237,7 @@ class MainWindow(QMainWindow):
         self.current_root = root
         self.path_edit.setEnabled(root != PHOTOS_ROOT)
         self.table.setColumnHidden(1, root == PHOTOS_ROOT)  # no file sizes in Photos
+        self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
         self.navigate_to(root)
 
     def _path_edited(self):
@@ -253,6 +264,73 @@ class MainWindow(QMainWindow):
         if item.is_folder:
             new_path = f"{self.current_path.rstrip('/')}/{item.name}"
             self.navigate_to(new_path)
+
+    def _show_context_menu(self, pos):
+        if self.current_root != MY_FILES_ROOT:
+            return  # rename/delete are unconfirmed for Photos — skip rather than guess
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        row = index.row()
+        if row not in {i.row() for i in self.table.selectedIndexes()}:
+            self.table.selectRow(row)
+
+        menu = QMenu(self)
+        rename_action = menu.addAction(self._icon("rename", size=16), "Rename\u2026")
+        delete_action = menu.addAction(self._icon("delete", size=16), "Move to Trash\u2026")
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen == rename_action:
+            self._rename_item(row)
+        elif chosen == delete_action:
+            self._delete_selected()
+
+    def _rename_item(self, row: int):
+        item = self.items[row]
+        new_name, ok = QInputDialog.getText(self, "Rename", "New name:", text=item.name)
+        new_name = new_name.strip()
+        if not ok or not new_name or new_name == item.name:
+            return
+        full_path = f"{self.current_path.rstrip('/')}/{item.name}"
+        self.statusBar().showMessage(f"Renaming to {new_name} \u2026")
+        self._start_worker(
+            self.cli.rename, full_path, new_name, on_finished=lambda _: self.refresh()
+        )
+
+    def _delete_selected(self):
+        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        if not rows:
+            return
+        names = [self.items[r].name for r in rows]
+        listing = "\n".join(f"\u2022 {n}" for n in names)
+        confirm = QMessageBox.question(
+            self,
+            "Move to Trash",
+            f"Move to Trash:\n{listing}\n\nThis can be undone from Proton Drive's Trash.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
+        self.statusBar().showMessage(f"Moving {len(paths)} item(s) to Trash \u2026")
+        self._start_worker(self.cli.trash, paths, on_finished=lambda _: self.refresh())
+
+    def create_folder(self):
+        if not self.cli:
+            return
+        if self.current_root != MY_FILES_ROOT:
+            QMessageBox.information(
+                self, "Not available", "Creating folders is only supported in My files."
+            )
+            return
+        name, ok = QInputDialog.getText(self, "New folder", "Folder name:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        self.statusBar().showMessage(f"Creating folder \u201c{name}\u201d \u2026")
+        self._start_worker(
+            self.cli.create_folder, self.current_path, name, on_finished=lambda _: self.refresh()
+        )
 
     # -- data loading --------------------------------------------------------
 

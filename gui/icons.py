@@ -138,6 +138,32 @@ def draw_file(p: QPainter, s: int):
     _line(p, x + w - fold, y + fold, x + w, y + fold)
 
 
+def draw_new_folder(p: QPainter, s: int):
+    draw_folder(p, s * 0.85)
+    cx, cy, r = s * 0.76, s * 0.7, s * 0.16
+    _line(p, cx - r, cy, cx + r, cy)
+    _line(p, cx, cy - r, cx, cy + r)
+
+
+def draw_delete(p: QPainter, s: int):
+    w, h = s * 0.46, s * 0.5
+    x, y = (s - w) / 2, s * 0.32
+    p.drawRect(QRectF(x, y, w, h))
+    _line(p, x - s * 0.06, y, x + w + s * 0.06, y)
+    _line(p, s / 2 - w * 0.18, y - s * 0.07, s / 2 + w * 0.18, y - s * 0.07)
+    _line(p, x + w * 0.3, y + h * 0.22, x + w * 0.3, y + h * 0.85)
+    _line(p, x + w * 0.7, y + h * 0.22, x + w * 0.7, y + h * 0.85)
+
+
+def draw_rename(p: QPainter, s: int):
+    _line(p, s * 0.22, s * 0.78, s * 0.6, s * 0.4)
+    _line(p, s * 0.6, s * 0.4, s * 0.74, s * 0.26)
+    _line(p, s * 0.74, s * 0.26, s * 0.8, s * 0.32)
+    _line(p, s * 0.8, s * 0.32, s * 0.66, s * 0.46)
+    _line(p, s * 0.66, s * 0.46, s * 0.28, s * 0.84)
+    _line(p, s * 0.22, s * 0.78, s * 0.28, s * 0.84)
+
+
 DRAWERS = {
     "back": draw_back,
     "refresh": draw_refresh,
@@ -149,4 +175,7 @@ DRAWERS = {
     "logout": draw_logout,
     "about": draw_about,
     "file": draw_file,
+    "new_folder": draw_new_folder,
+    "delete": draw_delete,
+    "rename": draw_rename,
 }

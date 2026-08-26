@@ -17,6 +17,7 @@ Early / minimal. Currently supports:
 - Browsing folders (double-click to open, "Back" to go back — disabled at the root)
 - Uploading files into the current folder
 - Downloading selected files/folders to a local directory
+- New folder, rename, and move-to-Trash (right-click a row) — "My files" only for now
 - Log in / log out (`auth login` opens your browser, `auth logout` is instant)
 - Separate "My files" and "Photos" sections — Photos is a flat, most-recent-first
   timeline (no folders, no file size — that's just what the CLI exposes for it)
@@ -88,7 +89,7 @@ Pull requests fixing this for real-world output are very welcome.
 
 ## Roadmap
 
-- [ ] Delete / rename / new folder
+- [ ] Permanent delete (`filesystem delete`) and empty-Trash — Delete currently only moves to Trash
 - [ ] Drag & drop upload
 - [ ] Upload/download progress (the CLI's stdout would need streaming, not just captured)
 - [ ] Sharing (`sharing invite`, list existing shares)
