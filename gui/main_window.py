@@ -28,8 +28,6 @@ from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
 from .icons import DRAWERS, make_icon
 from .workers import Worker
 
-REFERRAL_URL = "https://pr.tn/ref/H3Y6DHT7"
-
 
 def human_size(n) -> str:
     if n is None:
@@ -60,7 +58,9 @@ PHOTOS_ROOT = "/photos"
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Proton Drive GUI (unofficial)")
+        from . import __version__
+
+        self.setWindowTitle(f"Proton Drive GUI (unofficial) \u2014 v{__version__}")
         self.resize(920, 600)
 
         self.thread_pool = QThreadPool()
@@ -437,18 +437,17 @@ class MainWindow(QMainWindow):
 
         self._start_worker(self.cli.auth_logout, on_finished=_done, on_error=_err)
 
-    # -- about / referral --------------------------------------------------------
+    # -- about ------------------------------------------------------------------
 
     def show_about(self):
+        from . import __version__
+
         box = QMessageBox(self)
         box.setWindowTitle("About Proton Drive GUI")
         box.setTextFormat(Qt.RichText)
         box.setText(
-            "<b>Proton Drive GUI</b> (unofficial)<br><br>"
+            f"<b>Proton Drive GUI</b> v{__version__} (unofficial)<br><br>"
             "A free, open-source desktop client for the official Proton Drive CLI.<br><br>"
-            "Don't have Proton Drive yet? "
-            f'<a href="{REFERRAL_URL}">Sign up here</a> (referral link — '
-            "costs you nothing extra, gives me a little credit).<br><br>"
             '<a href="https://github.com/al3xg0r/protondrive-gui">Project on GitHub</a>'
         )
         label = box.findChild(QLabel, "qt_msgbox_label")
