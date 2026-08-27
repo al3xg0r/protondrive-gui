@@ -17,14 +17,15 @@ Early / minimal. Currently supports:
 - Browsing folders (double-click to open, "Back" to go back — disabled at the root)
 - Uploading files into the current folder
 - Downloading selected files/folders to a local directory
+- Upload/download progress bar (best-effort — scrapes the CLI's live spinner
+  output since there's no `--json` progress format; see caveat in Roadmap)
 - New folder, rename, and move-to-Trash (right-click a row) — "My files" only for now
 - Log in / log out (`auth login` opens your browser, `auth logout` is instant)
 - Separate "My files" and "Photos" sections — Photos is a flat, most-recent-first
   timeline (no folders, no file size — that's just what the CLI exposes for it)
 
-Not yet implemented (see [Roadmap](#roadmap)): delete, rename, new folder, search,
-sharing, drag & drop, upload/download progress bars, multi-select bulk actions,
-packaging as an AppImage.
+Not yet implemented (see [Roadmap](#roadmap)): search, sharing, drag & drop,
+multi-select bulk actions, packaging as an AppImage.
 
 ## Requirements
 
@@ -91,7 +92,10 @@ Pull requests fixing this for real-world output are very welcome.
 
 - [ ] Permanent delete (`filesystem delete`) and empty-Trash — Delete currently only moves to Trash
 - [ ] Drag & drop upload
-- [ ] Upload/download progress (the CLI's stdout would need streaming, not just captured)
+- [x] ~~Upload/download progress~~ — done, but fragile by nature: it scrapes the
+      CLI's live spinner text (`NN.NN% name (size)`), which isn't a documented
+      format and has no `--json` equivalent as of CLI 0.8.0. May silently stop
+      working on a future CLI update.
 - [ ] Sharing (`sharing invite`, list existing shares)
 - [ ] Search
 - [ ] Remember last-visited folder / window state

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QProgressDialog,
     QStatusBar,
     QTableWidget,
     QTableWidgetItem,
@@ -110,6 +111,39 @@ class MainWindow(QMainWindow):
 
         worker.signals.finished.connect(_handle_finished)
         worker.signals.error.connect(_handle_error)
+        self.thread_pool.start(worker)
+        return worker
+
+    def _start_streaming_worker(self, fn, *args, on_progress, on_finished=None, on_error=None):
+        """Like _start_worker, but for the *_with_progress() CLI calls:
+        wires the worker's thread-safe `progress` signal through as the
+        function's `on_progress` callback, so progress updates emitted
+        from the background thread land safely back on the GUI thread."""
+        worker = Worker(fn, *args)
+        self._active_workers.append(worker)
+
+        def _cleanup():
+            try:
+                self._active_workers.remove(worker)
+            except ValueError:
+                pass
+
+        def _handle_finished(result):
+            _cleanup()
+            if on_finished:
+                on_finished(result)
+
+        def _handle_error(message):
+            _cleanup()
+            (on_error or self._on_error)(message)
+
+        worker.signals.finished.connect(_handle_finished)
+        worker.signals.error.connect(_handle_error)
+        worker.signals.progress.connect(on_progress)
+        # Injected now (not at Worker(...) construction) so the callback
+        # can safely close over worker.signals, which only exists once
+        # the Worker object itself has been created.
+        worker.kwargs["on_progress"] = worker.signals.progress.emit
         self.thread_pool.start(worker)
         return worker
 
@@ -458,20 +492,52 @@ class MainWindow(QMainWindow):
 
     # -- upload / download -------------------------------------------------------
 
+    def _make_progress_dialog(self, title: str) -> QProgressDialog:
+        dialog = QProgressDialog(title, None, 0, 100, self)  # no Cancel button (not wired up yet)
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setValue(0)
+        return dialog
+
+    def _on_transfer_progress(self, dialog: QProgressDialog, percent: float, name: str, size: str):
+        dialog.setLabelText(f"{name} ({size})")
+        dialog.setValue(int(percent))
+
     def upload_files(self):
         if not self.cli:
             return
         paths, _ = QFileDialog.getOpenFileNames(self, "Select files to upload")
         if not paths:
             return
-        self.statusBar().showMessage(f"Uploading {len(paths)} file(s) \u2026")
+
+        dialog = self._make_progress_dialog(f"Uploading {len(paths)} file(s)\u2026")
+
+        def _done(_):
+            dialog.close()
+            self.refresh()
+
+        def _err(message):
+            dialog.close()
+            self._on_error(message)
+
         if self.current_root == PHOTOS_ROOT:
-            self._start_worker(
-                self.cli.photo_upload, paths, on_finished=lambda _: self.refresh()
+            self._start_streaming_worker(
+                self.cli.photo_upload_with_progress,
+                paths,
+                on_progress=lambda p, n, s: self._on_transfer_progress(dialog, p, n, s),
+                on_finished=_done,
+                on_error=_err,
             )
         else:
-            self._start_worker(
-                self.cli.upload, paths, self.current_path, on_finished=lambda _: self.refresh()
+            self._start_streaming_worker(
+                self.cli.upload_with_progress,
+                paths,
+                self.current_path,
+                on_progress=lambda p, n, s: self._on_transfer_progress(dialog, p, n, s),
+                on_finished=_done,
+                on_error=_err,
             )
 
     def download_selected(self):
@@ -486,8 +552,15 @@ class MainWindow(QMainWindow):
         if not target_dir:
             return
 
+        dialog = self._make_progress_dialog(f"Downloading {len(rows)} file(s)\u2026")
+
         def _done(_):
+            dialog.close()
             self.statusBar().showMessage("Download complete", 3000)
+
+        def _err(message):
+            dialog.close()
+            self._on_error(message)
 
         if self.current_root == PHOTOS_ROOT:
             node_uids = [
@@ -497,12 +570,24 @@ class MainWindow(QMainWindow):
             ]
             if not node_uids:
                 return
-            self._start_worker(
-                self.cli.photo_download, node_uids, target_dir, on_finished=_done
+            self._start_streaming_worker(
+                self.cli.photo_download_with_progress,
+                node_uids,
+                target_dir,
+                on_progress=lambda p, n, s: self._on_transfer_progress(dialog, p, n, s),
+                on_finished=_done,
+                on_error=_err,
             )
             return
 
-        for row in rows:
-            item = self.items[row]
-            remote_path = f"{self.current_path.rstrip('/')}/{item.name}"
-            self._start_worker(self.cli.download, remote_path, target_dir, on_finished=_done)
+        remote_paths = [
+            f"{self.current_path.rstrip('/')}/{self.items[row].name}" for row in rows
+        ]
+        self._start_streaming_worker(
+            self.cli.download_with_progress,
+            remote_paths,
+            target_dir,
+            on_progress=lambda p, n, s: self._on_transfer_progress(dialog, p, n, s),
+            on_finished=_done,
+            on_error=_err,
+        )

@@ -18,6 +18,7 @@ is the only place you should need to edit.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -192,6 +193,63 @@ class ProtonDriveCLI:
         `filesystem delete` command."""
         self._run(["filesystem", "trash", *paths], json_output=False)
 
+    # -- progress-reporting variants ------------------------------------------
+    #
+    # The CLI has no --json equivalent for progress (confirmed against the
+    # official README) — during upload/download it prints a live,
+    # human-facing spinner line to the terminal instead, e.g.:
+    #   ⠋ 0.00% chistyiy-i-sovremennyiy-odnostranichnyiy-maket.zip (86.92 MiB)
+    # This is undocumented UI text, not a stable machine format, and can
+    # change on any CLI update. _run_streaming() scrapes it best-effort;
+    # anything that doesn't match the pattern (log lines, "Uploaded N |
+    # Queued M" lines, etc.) is silently ignored rather than failing the
+    # whole transfer.
+
+    _PROGRESS_RE = re.compile(r"(\d+(?:\.\d+)?)%\s+(.+?)\s+\(([\d.]+\s*[KMGT]?i?B)\)")
+
+    def _run_streaming(self, args: list[str], on_progress) -> None:
+        cmd = [self.binary_path, *args]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        buffer = ""
+        try:
+            while True:
+                chunk = proc.stdout.read(256)
+                if not chunk:
+                    break
+                buffer += chunk
+                # The CLI redraws its progress line with \r; treat both \r
+                # and \n as frame boundaries so we catch every update
+                # whether or not the pipe preserves the redraw behavior.
+                while True:
+                    candidates = [i for i in (buffer.find("\r"), buffer.find("\n")) if i != -1]
+                    if not candidates:
+                        break
+                    idx = min(candidates)
+                    frame, buffer = buffer[:idx], buffer[idx + 1 :]
+                    match = self._PROGRESS_RE.search(frame)
+                    if match:
+                        on_progress(
+                            float(match.group(1)), match.group(2).strip(), match.group(3).strip()
+                        )
+        finally:
+            proc.wait()
+        if proc.returncode != 0:
+            raise ProtonDriveError(f"'{' '.join(cmd)}' failed (exit {proc.returncode})")
+
+    def upload_with_progress(self, local_paths: list[str], remote_dir: str, on_progress) -> None:
+        self._run_streaming(["filesystem", "upload", *local_paths, remote_dir], on_progress)
+
+    def download_with_progress(self, remote_paths: list[str], local_dir: str, on_progress) -> None:
+        self._run_streaming(["filesystem", "download", *remote_paths, local_dir], on_progress)
+
     # -- photos ---------------------------------------------------------------
     #
     # Confirmed: "filesystem list /photos" fails outright ("Path type
@@ -227,6 +285,13 @@ class ProtonDriveCLI:
         # working as "/photos/<NODE-UID>".
         paths = [f"/photos/{uid}" for uid in node_uids]
         self._run(["photo", "download", *paths, local_dir], json_output=False)
+
+    def photo_upload_with_progress(self, local_paths: list[str], on_progress) -> None:
+        self._run_streaming(["photo", "upload", *local_paths], on_progress)
+
+    def photo_download_with_progress(self, node_uids: list[str], local_dir: str, on_progress) -> None:
+        paths = [f"/photos/{uid}" for uid in node_uids]
+        self._run_streaming(["photo", "download", *paths, local_dir], on_progress)
 
     # -- helpers -----------------------------------------------------------
 

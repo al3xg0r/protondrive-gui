@@ -10,6 +10,11 @@ from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 class WorkerSignals(QObject):
     finished = Signal(object)
     error = Signal(str)
+    # percent (0-100), current item name, size label — for calls that
+    # stream progress (see cli.py's *_with_progress methods). Emitting a
+    # Qt signal from a background thread is safe: Qt auto-queues delivery
+    # onto whichever thread the receiver (this QObject) actually lives in.
+    progress = Signal(float, str, str)
 
 
 class Worker(QRunnable):
