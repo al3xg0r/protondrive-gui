@@ -18,6 +18,8 @@ is the only place you should need to edit.
 from __future__ import annotations
 
 import json
+import os
+import pty
 import re
 import shutil
 import subprocess
@@ -206,40 +208,58 @@ class ProtonDriveCLI:
     # whole transfer.
 
     _PROGRESS_RE = re.compile(r"(\d+(?:\.\d+)?)%\s+(.+?)\s+\(([\d.]+\s*[KMGT]?i?B)\)")
+    _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
     def _run_streaming(self, args: list[str], on_progress) -> None:
         cmd = [self.binary_path, *args]
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            bufsize=1,
-        )
-        assert proc.stdout is not None
-        buffer = ""
+        # A plain pipe isn't a real terminal, and progress-bar/spinner
+        # libraries commonly check isatty() before drawing live updates —
+        # over a plain PIPE, this CLI stayed completely silent until exit
+        # (observed: progress dialog stuck at 0% the whole transfer).
+        # Attaching a pseudo-terminal makes the CLI believe it's talking
+        # to a real console, so it keeps redrawing the line as it did when
+        # run directly in a terminal.
+        master_fd, slave_fd = pty.openpty()
         try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                close_fds=True,
+            )
+            os.close(slave_fd)
+            slave_fd = -1  # already closed; don't close again in finally
+
+            buffer = ""
             while True:
-                chunk = proc.stdout.read(256)
+                try:
+                    chunk = os.read(master_fd, 1024)
+                except OSError:
+                    # EIO is the normal way a Linux pty reports "the
+                    # other end closed" — i.e. the process has exited.
+                    break
                 if not chunk:
                     break
-                buffer += chunk
+                buffer += chunk.decode("utf-8", errors="replace")
                 # The CLI redraws its progress line with \r; treat both \r
-                # and \n as frame boundaries so we catch every update
-                # whether or not the pipe preserves the redraw behavior.
+                # and \n as frame boundaries so we catch every update.
                 while True:
                     candidates = [i for i in (buffer.find("\r"), buffer.find("\n")) if i != -1]
                     if not candidates:
                         break
                     idx = min(candidates)
                     frame, buffer = buffer[:idx], buffer[idx + 1 :]
+                    frame = self._ANSI_RE.sub("", frame)
                     match = self._PROGRESS_RE.search(frame)
                     if match:
                         on_progress(
                             float(match.group(1)), match.group(2).strip(), match.group(3).strip()
                         )
         finally:
+            if slave_fd != -1:
+                os.close(slave_fd)
+            os.close(master_fd)
             proc.wait()
         if proc.returncode != 0:
             raise ProtonDriveError(f"'{' '.join(cmd)}' failed (exit {proc.returncode})")
