@@ -157,8 +157,9 @@ setup_python_env() {
     fi
     # shellcheck disable=SC1091
     source .venv/bin/activate
-    pip install --quiet --upgrade pip
-    pip install --quiet -e .
+    pip install --upgrade pip
+    say "Installing the GUI and its dependencies (PySide6 is ~250 MB — this can take a minute)"
+    pip install -e .
     deactivate
     ok "GUI installed into $PROJECT_DIR/.venv"
 }
