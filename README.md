@@ -35,6 +35,36 @@ multi-select bulk actions, packaging as an AppImage.
 
 ## Setup
 
+### Quick start (recommended)
+
+One script does everything: installs system packages, downloads and verifies
+the official CLI, sets up the Python environment, and adds a desktop
+launcher.
+
+```bash
+git clone https://github.com/<your-username>/protondrive-gui.git
+cd protondrive-gui
+./install.sh
+```
+
+It only asks for `sudo` once, to install system packages (`libxcb-cursor0`
+for the GUI; `libsecret` and `dbus-x11`, which the official CLI itself needs
+to store your login session). Everything else stays local to your user
+account or this folder. Safe to re-run any time — it skips whatever's
+already done.
+
+Once it finishes:
+
+```bash
+proton-drive auth login   # one-time login, opens your browser
+```
+
+Then launch **Proton Drive GUI** from your application menu.
+
+### Manual setup
+
+If you'd rather do it yourself, or `install.sh` doesn't fit your distro:
+
 ```bash
 # 1. Install and authenticate the official CLI first (one-time, from a terminal)
 ./proton-drive auth login
@@ -59,10 +89,10 @@ pip install -e .
 protondrive-gui
 ```
 
-## Desktop launcher (no terminal needed after setup)
+### Desktop launcher only
 
-Once you've done `pip install -e .` inside `.venv` (above), add a clickable
-launcher to your application menu:
+If you already have the CLI and a venv set up and just want the app-menu
+launcher:
 
 ```bash
 ./scripts/install-desktop-entry.sh
@@ -102,8 +132,9 @@ Pull requests fixing this for real-world output are very welcome.
 - [ ] Packaging (AppImage / Flatpak)
 - [ ] Dark/light theme following system settings
 - [ ] Show logged-in account + storage quota (not currently possible — `proton-drive --help` exposes no account/whoami/quota command, only `auth login` / `auth logout`)
-- [ ] One-shot installer (fetch CLI, install system deps, set up venv,
-      install desktop entry) instead of today's multi-step manual setup
+- [x] ~~One-shot installer~~ — `./install.sh` fetches the CLI (with checksum
+      verification), installs system deps, sets up the venv, and installs
+      the desktop launcher
 
 ## Contributing
 
