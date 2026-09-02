@@ -15,7 +15,8 @@ A minimal desktop GUI wrapper around the official [Proton Drive CLI](https://pro
 Early / minimal. Currently supports:
 
 - Browsing folders (double-click to open, "Back" to go back — disabled at the root)
-- Uploading files into the current folder
+- Uploading files into the current folder — via the toolbar button or by
+  dragging files onto the window
 - Downloading selected files/folders to a local directory
 - Upload/download progress bar (best-effort — scrapes the CLI's live spinner
   output since there's no `--json` progress format; see caveat in Roadmap)
@@ -24,7 +25,7 @@ Early / minimal. Currently supports:
 - Separate "My files" and "Photos" sections — Photos is a flat, most-recent-first
   timeline (no folders, no file size — that's just what the CLI exposes for it)
 
-Not yet implemented (see [Roadmap](#roadmap)): search, sharing, drag & drop,
+Not yet implemented (see [Roadmap](#roadmap)): search, sharing,
 multi-select bulk actions, packaging as an AppImage.
 
 ## Requirements
@@ -121,7 +122,8 @@ Pull requests fixing this for real-world output are very welcome.
 ## Roadmap
 
 - [ ] Permanent delete (`filesystem delete`) and empty-Trash — Delete currently only moves to Trash
-- [ ] Drag & drop upload
+- [x] ~~Drag & drop upload~~ — drop files onto the window (folders aren't
+      supported yet — drop the files inside them instead)
 - [x] ~~Upload/download progress~~ — done, but fragile by nature: it scrapes the
       CLI's live spinner text (`NN.NN% name (size)`), which isn't a documented
       format and has no `--json` equivalent as of CLI 0.8.0. May silently stop

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtGui import QAction, QIcon, QPalette
@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"Proton Drive GUI (unofficial) \u2014 v{__version__}")
         self.resize(920, 600)
+        self.setAcceptDrops(True)
 
         self.thread_pool = QThreadPool()
         # PySide6 gotcha: a QRunnable handed to QThreadPool.start() can be
@@ -511,7 +512,11 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "Select files to upload")
         if not paths:
             return
+        self._upload_paths(paths)
 
+    def _upload_paths(self, paths: list[str]):
+        if not self.cli:
+            return
         dialog = self._make_progress_dialog(f"Uploading {len(paths)} file(s)\u2026")
 
         def _done(_):
@@ -591,3 +596,42 @@ class MainWindow(QMainWindow):
             on_finished=_done,
             on_error=_err,
         )
+
+    # -- drag & drop upload -------------------------------------------------------
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self.table.setStyleSheet("QTableWidget { border: 2px dashed palette(highlight); }")
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        self.table.setStyleSheet("")
+
+    def dropEvent(self, event):
+        self.table.setStyleSheet("")
+        if not self.cli:
+            event.ignore()
+            return
+
+        local_paths = [
+            url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()
+        ]
+        files = [p for p in local_paths if Path(p).is_file()]
+        dirs = [p for p in local_paths if Path(p).is_dir()]
+        event.acceptProposedAction()
+
+        if not files:
+            if dirs:
+                QMessageBox.information(
+                    self,
+                    "Folders not supported",
+                    "Drag & drop currently only supports individual files, not whole "
+                    "folders. Drop the files themselves, or use the Upload button.",
+                )
+            return
+
+        self._upload_paths(files)
