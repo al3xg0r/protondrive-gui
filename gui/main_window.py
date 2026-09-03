@@ -63,8 +63,14 @@ class MainWindow(QMainWindow):
         from . import __version__
 
         self.setWindowTitle(f"Proton Drive GUI (unofficial) \u2014 v{__version__}")
-        self.resize(920, 600)
+        self.resize(1080, 640)
         self.setAcceptDrops(True)
+        # A floor narrow enough to still be a usable window, but wide
+        # enough that even icon-only toolbar mode (see resizeEvent) never
+        # has to hide a button — verified empirically: below this, Qt's
+        # toolbar just makes overflowing buttons invisible with no "»"
+        # overflow indicator at all, which is worse than a fixed limit.
+        self.setMinimumWidth(480)
 
         self.thread_pool = QThreadPool()
         # PySide6 gotcha: a QRunnable handed to QThreadPool.start() can be
@@ -162,6 +168,7 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.addToolBar(toolbar)
+        self._toolbar = toolbar
 
         self.back_action = QAction(self._icon("back"), "Back", self)
         self.back_action.triggered.connect(self.go_up)
@@ -188,21 +195,21 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        self.new_folder_action = QAction(self._icon("new_folder"), "New folder\u2026", self)
+        self.new_folder_action = QAction(self._icon("new_folder"), "New folder", self)
         self.new_folder_action.triggered.connect(self.create_folder)
         toolbar.addAction(self.new_folder_action)
 
-        self.empty_trash_action = QAction(self._icon("delete"), "Empty Trash\u2026", self)
+        self.empty_trash_action = QAction(self._icon("delete"), "Empty Trash", self)
         self.empty_trash_action.triggered.connect(self.empty_trash)
         toolbar.addAction(self.empty_trash_action)
 
         toolbar.addSeparator()
 
-        self.upload_action = QAction(self._icon("upload"), "Upload files\u2026", self)
+        self.upload_action = QAction(self._icon("upload"), "Upload", self)
         self.upload_action.triggered.connect(self.upload_files)
         toolbar.addAction(self.upload_action)
 
-        self.download_action = QAction(self._icon("download"), "Download selected", self)
+        self.download_action = QAction(self._icon("download"), "Download", self)
         self.download_action.triggered.connect(self.download_selected)
         toolbar.addAction(self.download_action)
 
@@ -210,7 +217,7 @@ class MainWindow(QMainWindow):
 
         self._login_icon = self._icon("login")
         self._logout_icon = self._icon("logout")
-        self.login_action = QAction(self._login_icon, "Log in\u2026", self)
+        self.login_action = QAction(self._login_icon, "Log in", self)
         self.login_action.triggered.connect(self.toggle_auth)
         toolbar.addAction(self.login_action)
 
@@ -476,7 +483,7 @@ class MainWindow(QMainWindow):
 
     def _set_auth_ui(self, logged_in: bool):
         self.is_logged_in = logged_in
-        self.login_action.setText("Log out" if logged_in else "Log in\u2026")
+        self.login_action.setText("Log out" if logged_in else "Log in")
         self.login_action.setIcon(self._logout_icon if logged_in else self._login_icon)
 
     def toggle_auth(self):
@@ -639,6 +646,22 @@ class MainWindow(QMainWindow):
         )
 
     # -- drag & drop upload -------------------------------------------------------
+
+    # -- responsive toolbar -------------------------------------------------------
+
+    _TOOLBAR_TEXT_THRESHOLD = 1060  # below this window width, drop text labels
+    # rather than risk Qt's overflow handling — verified it can hide toolbar
+    # buttons entirely with no visible "more" indicator when they don't fit.
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        style = (
+            Qt.ToolButtonIconOnly
+            if self.width() < self._TOOLBAR_TEXT_THRESHOLD
+            else Qt.ToolButtonTextBesideIcon
+        )
+        if self._toolbar.toolButtonStyle() != style:
+            self._toolbar.setToolButtonStyle(style)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
