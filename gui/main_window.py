@@ -4,19 +4,23 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import Qt, QThreadPool
-from PySide6.QtGui import QAction, QIcon, QPalette
+from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QPalette
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
     QProgressDialog,
+    QStackedWidget,
     QStatusBar,
     QTableWidget,
     QTableWidgetItem,
@@ -48,14 +52,37 @@ def human_size(n) -> str:
 # The CLI's root listing ("/") only shows Proton's virtual top-level
 # sections (my-files, devices, photos, shared-by-me, shared-with-me,
 # trash, albums, ...) rather than actual files. For a "what's actually
-# on my disk" experience we skip that raw listing and instead offer two
-# named roots users actually care about — regular files, and the
-# camera-upload "Photos" section (which lives outside "/my-files").
-# Trash/shared/devices/albums are still reachable by typing a raw
-# "/section/..." path, just not exposed as a dedicated button (yet).
+# on my disk" experience we skip that raw listing and instead offer
+# named roots as buttons in the sidebar. "devices" and "albums" are
+# still reachable by typing a raw "/section/..." path, just not exposed
+# as dedicated buttons (yet).
 MY_FILES_ROOT = "/my-files"
 PHOTOS_ROOT = "/photos"
 TRASH_ROOT = "/trash"
+SHARED_BY_ME_ROOT = "/shared-by-me"
+SHARED_WITH_ME_ROOT = "/shared-with-me"
+
+ROOT_LABELS = {
+    MY_FILES_ROOT: "My files",
+    PHOTOS_ROOT: "Photos",
+    TRASH_ROOT: "Trash",
+    SHARED_BY_ME_ROOT: "Shared by me",
+    SHARED_WITH_ME_ROOT: "Shared with me",
+}
+ROOT_ICONS = {
+    MY_FILES_ROOT: "folder",
+    PHOTOS_ROOT: "photos",
+    TRASH_ROOT: "delete",
+    SHARED_BY_ME_ROOT: "shared",
+    SHARED_WITH_ME_ROOT: "shared",
+}
+# Roots where rename/delete semantics haven't been confirmed against the
+# real CLI (Photos definitely doesn't support them via `filesystem`;
+# Shared roots are guesses by analogy — content you don't own, or share
+# settings, may need entirely different verbs like "leave"/"unshare"
+# rather than a plain delete). Context menu is skipped there rather than
+# risk a wrong guess.
+CONTEXT_MENU_UNSUPPORTED_ROOTS = {PHOTOS_ROOT, SHARED_BY_ME_ROOT, SHARED_WITH_ME_ROOT}
 
 
 class MainWindow(QMainWindow):
@@ -66,12 +93,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Proton Drive GUI (unofficial) \u2014 v{__version__}")
         self.resize(1080, 640)
         self.setAcceptDrops(True)
-        # A floor narrow enough to still be a usable window, but wide
-        # enough that even icon-only toolbar mode (see resizeEvent) never
-        # has to hide a button — verified empirically: below this, Qt's
+        # A floor narrow enough to still be usable, but wide enough that
+        # even icon-only mode (see resizeEvent) never has to hide a
+        # button — verified empirically: below a workable width, Qt's
         # toolbar just makes overflowing buttons invisible with no "»"
         # overflow indicator at all, which is worse than a fixed limit.
         self.setMinimumWidth(480)
+        self.setMinimumHeight(360)
 
         self.thread_pool = QThreadPool()
         # PySide6 gotcha: a QRunnable handed to QThreadPool.start() can be
@@ -80,8 +108,8 @@ class MainWindow(QMainWindow):
         # the calling method goes out of scope immediately). When the pool
         # thread then tries to call back into a half-collected Python
         # object, it segfaults rather than raising a catchable exception —
-        # this was very likely the cause of the crash/hang seen after
-        # login. Every in-flight worker is kept here until it reports
+        # this was very likely the cause of a crash/hang seen after login.
+        # Every in-flight worker is kept here until it reports
         # finished/error, guaranteeing it stays alive for the whole call.
         self._active_workers: list[Worker] = []
 
@@ -165,6 +193,7 @@ class MainWindow(QMainWindow):
     # -- setup ---------------------------------------------------------------
 
     def _build_ui(self):
+        # -- top toolbar: actions on the current view --
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -179,20 +208,6 @@ class MainWindow(QMainWindow):
         self.refresh_action = QAction(self._icon("refresh"), "Refresh", self)
         self.refresh_action.triggered.connect(self.refresh)
         toolbar.addAction(self.refresh_action)
-
-        toolbar.addSeparator()
-
-        self.my_files_action = QAction(self._icon("folder"), "My files", self)
-        self.my_files_action.triggered.connect(lambda: self.switch_root(MY_FILES_ROOT))
-        toolbar.addAction(self.my_files_action)
-
-        self.photos_action = QAction(self._icon("photos"), "Photos", self)
-        self.photos_action.triggered.connect(lambda: self.switch_root(PHOTOS_ROOT))
-        toolbar.addAction(self.photos_action)
-
-        self.trash_action = QAction(self._icon("delete"), "Trash", self)
-        self.trash_action.triggered.connect(lambda: self.switch_root(TRASH_ROOT))
-        toolbar.addAction(self.trash_action)
 
         toolbar.addSeparator()
 
@@ -217,6 +232,23 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
+        view_mode_group = QActionGroup(self)
+        view_mode_group.setExclusive(True)
+        self.list_view_action = QAction(self._icon("list_view"), "List", self)
+        self.list_view_action.setCheckable(True)
+        self.list_view_action.setChecked(True)
+        self.list_view_action.triggered.connect(lambda: self._set_view_mode("list"))
+        view_mode_group.addAction(self.list_view_action)
+        toolbar.addAction(self.list_view_action)
+
+        self.grid_view_action = QAction(self._icon("grid_view"), "Grid", self)
+        self.grid_view_action.setCheckable(True)
+        self.grid_view_action.triggered.connect(lambda: self._set_view_mode("grid"))
+        view_mode_group.addAction(self.grid_view_action)
+        toolbar.addAction(self.grid_view_action)
+
+        toolbar.addSeparator()
+
         self._login_icon = self._icon("login")
         self._logout_icon = self._icon("logout")
         self.login_action = QAction(self._login_icon, "Log in", self)
@@ -228,6 +260,23 @@ class MainWindow(QMainWindow):
         self.about_action = QAction(self._icon("about"), "About", self)
         self.about_action.triggered.connect(self.show_about)
         toolbar.addAction(self.about_action)
+
+        # -- right sidebar: navigation between sections --
+        nav = QToolBar("Navigation")
+        nav.setMovable(False)
+        nav.setOrientation(Qt.Vertical)
+        nav.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.addToolBar(Qt.RightToolBarArea, nav)
+        self._nav_toolbar = nav
+
+        self.root_actions: dict[str, QAction] = {}
+        for root in (MY_FILES_ROOT, PHOTOS_ROOT, TRASH_ROOT, SHARED_BY_ME_ROOT, SHARED_WITH_ME_ROOT):
+            action = QAction(self._icon(ROOT_ICONS[root]), ROOT_LABELS[root], self)
+            action.triggered.connect(lambda _checked=False, r=root: self.switch_root(r))
+            nav.addAction(action)
+            self.root_actions[root] = action
+            if root == TRASH_ROOT:
+                nav.addSeparator()
 
         self._row_folder_icon = self._icon("folder", size=16)
         self._row_file_icon = self._icon("file", size=16)
@@ -247,6 +296,8 @@ class MainWindow(QMainWindow):
         path_row.addWidget(self.path_edit)
         layout.addLayout(path_row)
 
+        self.view_stack = QStackedWidget()
+
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Name", "Size", "Modified"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -254,8 +305,26 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.cellDoubleClicked.connect(self._row_double_clicked)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._show_context_menu)
-        layout.addWidget(self.table)
+        self.table.customContextMenuRequested.connect(self._show_context_menu_table)
+        self.table.installEventFilter(self)
+        self.view_stack.addWidget(self.table)
+
+        self.grid = QListWidget()
+        self.grid.setViewMode(QListWidget.IconMode)
+        self.grid.setIconSize(QSize(64, 64))
+        self.grid.setResizeMode(QListWidget.Adjust)
+        self.grid.setMovement(QListWidget.Static)
+        self.grid.setSpacing(14)
+        self.grid.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.grid.itemDoubleClicked.connect(
+            lambda item: self._row_double_clicked(self.grid.row(item), 0)
+        )
+        self.grid.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.grid.customContextMenuRequested.connect(self._show_context_menu_grid)
+        self.grid.installEventFilter(self)
+        self.view_stack.addWidget(self.grid)
+
+        layout.addWidget(self.view_stack)
 
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar())
@@ -269,6 +338,48 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("proton-drive CLI not found", 5000)
             return
         self._refresh_auth_state(then_refresh=True)
+
+    # -- view mode (list / grid) --------------------------------------------------
+
+    def _set_view_mode(self, mode: str):
+        self.view_stack.setCurrentWidget(self.grid if mode == "grid" else self.table)
+
+    def _selected_rows(self) -> list[int]:
+        if self.view_stack.currentWidget() is self.grid:
+            return sorted({self.grid.row(it) for it in self.grid.selectedItems()})
+        return sorted({idx.row() for idx in self.table.selectedIndexes()})
+
+    # -- responsive toolbars -------------------------------------------------------
+
+    _TOOLBAR_TEXT_THRESHOLD = 960  # below this window width, drop text labels on
+    # both toolbars — Qt's overflow handling can hide buttons entirely with no
+    # visible "more" indicator when they don't fit, verified empirically.
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        style = (
+            Qt.ToolButtonIconOnly
+            if self.width() < self._TOOLBAR_TEXT_THRESHOLD
+            else Qt.ToolButtonTextBesideIcon
+        )
+        if self._toolbar.toolButtonStyle() != style:
+            self._toolbar.setToolButtonStyle(style)
+        if self._nav_toolbar.toolButtonStyle() != style:
+            self._nav_toolbar.setToolButtonStyle(style)
+
+    # -- keyboard shortcuts -------------------------------------------------------
+
+    def eventFilter(self, obj, event):
+        if (
+            event.type() == QEvent.KeyPress
+            and event.key() == Qt.Key_Delete
+            and obj in (self.table, self.grid)
+            and self.current_root == MY_FILES_ROOT
+            and self._selected_rows()
+        ):
+            self._delete_selected()
+            return True
+        return super().eventFilter(obj, event)
 
     # -- navigation ------------------------------------------------------------
 
@@ -296,8 +407,10 @@ class MainWindow(QMainWindow):
         self.path_edit.setEnabled(root != PHOTOS_ROOT)
         self.table.setColumnHidden(1, root == PHOTOS_ROOT)  # no file sizes in Photos
         self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
-        self.upload_action.setEnabled(root != TRASH_ROOT)
+        self.upload_action.setEnabled(root not in (TRASH_ROOT, SHARED_WITH_ME_ROOT))
         self.empty_trash_action.setVisible(root == TRASH_ROOT)
+        for r, action in self.root_actions.items():
+            action.setChecked(r == root)
         self.navigate_to(root)
 
     def _path_edited(self):
@@ -317,8 +430,6 @@ class MainWindow(QMainWindow):
             if widget:
                 widget.deleteLater()
 
-        root_labels = {MY_FILES_ROOT: "My files", PHOTOS_ROOT: "Photos", TRASH_ROOT: "Trash"}
-
         def add_crumb(text: str, target: str, current: bool):
             btn = QToolButton()
             btn.setText(text)
@@ -331,7 +442,7 @@ class MainWindow(QMainWindow):
             self.breadcrumb_bar.addWidget(btn)
 
         segments = [s for s in self._display_path(self.current_path).split("/") if s]
-        add_crumb(root_labels.get(self.current_root, "/"), self.current_root, not segments)
+        add_crumb(ROOT_LABELS.get(self.current_root, "/"), self.current_root, not segments)
 
         accumulated = ""
         for i, seg in enumerate(segments):
@@ -345,8 +456,8 @@ class MainWindow(QMainWindow):
         if self.current_path in ("/", "", self.current_root):
             return
         parent = str(PurePosixPath(self.current_path).parent)
-        # Never let "Back" escape above the current root ("/my-files" or
-        # "/photos") into the raw virtual-section root ("/devices", ...).
+        # Never let "Back" escape above the current root into the raw
+        # virtual-section root ("/devices", ...).
         if not (parent + "/").startswith(self.current_root + "/") and parent != self.current_root:
             parent = self.current_root
         self.navigate_to(parent)
@@ -357,22 +468,35 @@ class MainWindow(QMainWindow):
             new_path = f"{self.current_path.rstrip('/')}/{item.name}"
             self.navigate_to(new_path)
 
-    def _show_context_menu(self, pos):
-        if self.current_root == PHOTOS_ROOT:
-            return  # rename/delete/restore are unconfirmed for Photos — skip rather than guess
+    def _show_context_menu_table(self, pos):
         index = self.table.indexAt(pos)
         if not index.isValid():
             return
         row = index.row()
-        if row not in {i.row() for i in self.table.selectedIndexes()}:
+        if row not in self._selected_rows():
             self.table.selectRow(row)
+        self._open_context_menu(row, self.table.viewport().mapToGlobal(pos))
+
+    def _show_context_menu_grid(self, pos):
+        item = self.grid.itemAt(pos)
+        if item is None:
+            return
+        row = self.grid.row(item)
+        if row not in self._selected_rows():
+            self.grid.clearSelection()
+            item.setSelected(True)
+        self._open_context_menu(row, self.grid.viewport().mapToGlobal(pos))
+
+    def _open_context_menu(self, row: int, global_pos):
+        if self.current_root in CONTEXT_MENU_UNSUPPORTED_ROOTS:
+            return  # rename/delete/restore semantics unconfirmed here — skip rather than guess
 
         menu = QMenu(self)
 
         if self.current_root == TRASH_ROOT:
             restore_action = menu.addAction(self._icon("refresh", size=16), "Restore")
             delete_action = menu.addAction(self._icon("delete", size=16), "Delete Permanently\u2026")
-            chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+            chosen = menu.exec(global_pos)
             if chosen == restore_action:
                 self._restore_selected()
             elif chosen == delete_action:
@@ -381,7 +505,7 @@ class MainWindow(QMainWindow):
 
         rename_action = menu.addAction(self._icon("rename", size=16), "Rename\u2026")
         delete_action = menu.addAction(self._icon("delete", size=16), "Move to Trash\u2026")
-        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        chosen = menu.exec(global_pos)
         if chosen == rename_action:
             self._rename_item(row)
         elif chosen == delete_action:
@@ -400,7 +524,7 @@ class MainWindow(QMainWindow):
         )
 
     def _delete_selected(self):
-        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        rows = self._selected_rows()
         if not rows:
             return
         names = [self.items[r].name for r in rows]
@@ -419,7 +543,7 @@ class MainWindow(QMainWindow):
         self._start_worker(self.cli.trash, paths, on_finished=lambda _: self.refresh())
 
     def _restore_selected(self):
-        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        rows = self._selected_rows()
         if not rows:
             return
         paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
@@ -427,7 +551,7 @@ class MainWindow(QMainWindow):
         self._start_worker(self.cli.restore, paths, on_finished=lambda _: self.refresh())
 
     def _permanently_delete_selected(self):
-        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        rows = self._selected_rows()
         if not rows:
             return
         names = [self.items[r].name for r in rows]
@@ -496,7 +620,9 @@ class MainWindow(QMainWindow):
             self.items = sorted(items, key=lambda i: i.modified or "", reverse=True)
         else:
             self.items = sorted(items, key=lambda i: (not i.is_folder, i.name.lower()))
+
         self.table.setRowCount(len(self.items))
+        self.grid.clear()
         for row, item in enumerate(self.items):
             if item.is_folder:
                 icon = self._row_folder_icon
@@ -504,6 +630,7 @@ class MainWindow(QMainWindow):
                 icon = self._row_photo_icon
             else:
                 icon = self._row_file_icon
+
             name_item = QTableWidgetItem(item.name)
             name_item.setIcon(icon)
             self.table.setItem(row, 0, name_item)
@@ -513,6 +640,9 @@ class MainWindow(QMainWindow):
                 size_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 1, size_item)
             self.table.setItem(row, 2, QTableWidgetItem(item.modified or ""))
+
+            self.grid.addItem(QListWidgetItem(icon, item.name))
+
         self.statusBar().showMessage(f"{len(self.items)} file(s)", 3000)
 
     def _on_error(self, message: str):
@@ -541,6 +671,7 @@ class MainWindow(QMainWindow):
                 self.refresh()
         else:
             self.table.setRowCount(0)
+            self.grid.clear()
             self.statusBar().showMessage('Not logged in — click "Log in…" to continue.', 6000)
 
     def _set_auth_ui(self, logged_in: bool):
@@ -658,7 +789,7 @@ class MainWindow(QMainWindow):
     def download_selected(self):
         if not self.cli:
             return
-        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        rows = self._selected_rows()
         if not rows:
             QMessageBox.information(self, "Nothing selected", "Select one or more items first.")
             return
@@ -709,26 +840,12 @@ class MainWindow(QMainWindow):
 
     # -- drag & drop upload -------------------------------------------------------
 
-    # -- responsive toolbar -------------------------------------------------------
-
-    _TOOLBAR_TEXT_THRESHOLD = 1060  # below this window width, drop text labels
-    # rather than risk Qt's overflow handling — verified it can hide toolbar
-    # buttons entirely with no visible "more" indicator when they don't fit.
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        style = (
-            Qt.ToolButtonIconOnly
-            if self.width() < self._TOOLBAR_TEXT_THRESHOLD
-            else Qt.ToolButtonTextBesideIcon
-        )
-        if self._toolbar.toolButtonStyle() != style:
-            self._toolbar.setToolButtonStyle(style)
-
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-            self.table.setStyleSheet("QTableWidget { border: 2px dashed palette(highlight); }")
+            style = "QTableWidget, QListWidget { border: 2px dashed palette(highlight); }"
+            self.table.setStyleSheet(style)
+            self.grid.setStyleSheet(style)
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasUrls():
@@ -736,9 +853,11 @@ class MainWindow(QMainWindow):
 
     def dragLeaveEvent(self, event):
         self.table.setStyleSheet("")
+        self.grid.setStyleSheet("")
 
     def dropEvent(self, event):
         self.table.setStyleSheet("")
+        self.grid.setStyleSheet("")
         if not self.cli:
             event.ignore()
             return

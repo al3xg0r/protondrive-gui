@@ -174,6 +174,10 @@ class ProtonDriveCLI:
     # -- filesystem ----------------------------------------------------------
 
     def list_dir(self, path: str) -> list[DriveItem]:
+        """Works for "/my-files/...", "/trash/...", and — unconfirmed but
+        assumed by analogy, since they're real filesystem nodes just
+        filtered by share status rather than a separate content type like
+        Photos — "/shared-by-me" and "/shared-with-me" too."""
         data = self._run(["filesystem", "list", path])
         return [self._normalize_item(raw) for raw in self._extract_items(data)]
 

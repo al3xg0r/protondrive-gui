@@ -20,17 +20,21 @@ Early / minimal. Currently supports:
 - Downloading selected files/folders to a local directory
 - Upload/download progress bar (best-effort — scrapes the CLI's live spinner
   output since there's no `--json` progress format; see caveat in Roadmap)
+- Delete key moves the selected item(s) in "My files" to Trash (confirms first)
 - New folder, rename, and move-to-Trash (right-click a row) — "My files" only for now
 - Browse Trash, restore or permanently delete individual items (right-click),
   and Empty Trash (only shown while browsing Trash; both confirm first, since
   they're irreversible)
 - Breadcrumb trail showing where you are, click any segment to jump back
 - Log in / log out (`auth login` opens your browser, `auth logout` is instant)
-- Separate "My files" and "Photos" sections — Photos is a flat, most-recent-first
-  timeline (no folders, no file size — that's just what the CLI exposes for it)
+- Sidebar sections: My files, Photos (flat, most-recent-first timeline — no
+  folders, no file size, just what the CLI exposes for it), Trash, Shared by
+  me, Shared with me (the last two are new and only lightly tested — right-click
+  actions are intentionally disabled there until confirmed safe)
+- List view and grid/tile view, switchable from the toolbar
 
-Not yet implemented (see [Roadmap](#roadmap)): search, sharing,
-multi-select bulk actions, packaging as an AppImage.
+Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
+(invite/remove/set-url), multi-select bulk actions, packaging as an AppImage.
 
 ## Requirements
 
@@ -125,6 +129,18 @@ Pull requests fixing this for real-world output are very welcome.
 
 ## Roadmap
 
+- [x] ~~Delete key shortcut~~ — moves the selection to Trash in My files, with confirmation
+- [x] ~~List/grid view toggle~~ — in the top toolbar
+- [x] ~~Shared by me / Shared with me~~ — added as sidebar sections; listing
+      reuses the same `filesystem list` call as My files/Trash (an educated
+      guess, not confirmed against real shared content yet — please report
+      back if browsing them errors or shows something unexpected). Rename,
+      delete, and Restore are deliberately **not** enabled there yet — those
+      likely need different verbs (leave/unshare) for content you don't own,
+      and guessing wrong risked doing the wrong thing to someone else's files
+- [ ] Sharing management itself — `sharing invite`, `sharing status`,
+      `sharing set-url`, accepting/rejecting invitations — none of this is
+      wired up yet, only browsing shared content
 - [x] ~~Permanent delete~~ — Empty Trash (`filesystem empty-trash`) and
       per-item Delete Permanently (`filesystem delete`, right-click in Trash)
       are both wired up, each confirms first since they're irreversible

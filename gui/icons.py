@@ -164,6 +164,32 @@ def draw_rename(p: QPainter, s: int):
     _line(p, s * 0.22, s * 0.78, s * 0.28, s * 0.84)
 
 
+def draw_shared(p: QPainter, s: int):
+    draw_folder(p, s * 0.85)
+    cy = s * 0.72
+    cx1, cx2 = s * 0.6, s * 0.84
+    r = s * 0.08
+    p.drawEllipse(QRectF(cx1 - r, cy - r, 2 * r, 2 * r))
+    p.drawEllipse(QRectF(cx2 - r, cy - r, 2 * r, 2 * r))
+    _line(p, cx1 + r, cy, cx2 - r, cy)
+
+
+def draw_list_view(p: QPainter, s: int):
+    for frac in (0.28, 0.5, 0.72):
+        y = s * frac
+        _line(p, s * 0.18, y, s * 0.82, y)
+
+
+def draw_grid_view(p: QPainter, s: int):
+    m, gap = s * 0.16, s * 0.08
+    cell = (s - 2 * m - gap) / 2
+    for row in range(2):
+        for col in range(2):
+            x = m + col * (cell + gap)
+            y = m + row * (cell + gap)
+            p.drawRect(QRectF(x, y, cell, cell))
+
+
 DRAWERS = {
     "back": draw_back,
     "refresh": draw_refresh,
@@ -178,4 +204,7 @@ DRAWERS = {
     "new_folder": draw_new_folder,
     "delete": draw_delete,
     "rename": draw_rename,
+    "shared": draw_shared,
+    "list_view": draw_list_view,
+    "grid_view": draw_grid_view,
 }
