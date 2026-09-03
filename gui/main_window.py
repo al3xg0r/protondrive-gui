@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -201,6 +202,7 @@ class MainWindow(QMainWindow):
 
         self.empty_trash_action = QAction(self._icon("delete"), "Empty Trash", self)
         self.empty_trash_action.triggered.connect(self.empty_trash)
+        self.empty_trash_action.setVisible(False)  # only shown while browsing Trash
         toolbar.addAction(self.empty_trash_action)
 
         toolbar.addSeparator()
@@ -234,6 +236,10 @@ class MainWindow(QMainWindow):
         central = QWidget()
         layout = QVBoxLayout(central)
 
+        self.breadcrumb_bar = QHBoxLayout()
+        self.breadcrumb_bar.setContentsMargins(4, 4, 4, 4)
+        layout.addLayout(self.breadcrumb_bar)
+
         path_row = QHBoxLayout()
         path_row.addWidget(QLabel("Path:"))
         self.path_edit = QLineEdit(self._display_path(self.current_path))
@@ -253,6 +259,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar())
+        self._update_breadcrumbs()
 
     def _init_cli(self):
         try:
@@ -290,6 +297,7 @@ class MainWindow(QMainWindow):
         self.table.setColumnHidden(1, root == PHOTOS_ROOT)  # no file sizes in Photos
         self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
         self.upload_action.setEnabled(root != TRASH_ROOT)
+        self.empty_trash_action.setVisible(root == TRASH_ROOT)
         self.navigate_to(root)
 
     def _path_edited(self):
@@ -299,7 +307,39 @@ class MainWindow(QMainWindow):
         self.current_path = path if path.startswith("/") else f"/{path}"
         self.path_edit.setText(self._display_path(self.current_path))
         self.back_action.setEnabled(self.current_path != self.current_root)
+        self._update_breadcrumbs()
         self.refresh()
+
+    def _update_breadcrumbs(self):
+        while self.breadcrumb_bar.count():
+            item = self.breadcrumb_bar.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        root_labels = {MY_FILES_ROOT: "My files", PHOTOS_ROOT: "Photos", TRASH_ROOT: "Trash"}
+
+        def add_crumb(text: str, target: str, current: bool):
+            btn = QToolButton()
+            btn.setText(text)
+            btn.setAutoRaise(True)
+            font = btn.font()
+            font.setBold(current)
+            btn.setFont(font)
+            btn.setEnabled(not current)
+            btn.clicked.connect(lambda: self.navigate_to(target))
+            self.breadcrumb_bar.addWidget(btn)
+
+        segments = [s for s in self._display_path(self.current_path).split("/") if s]
+        add_crumb(root_labels.get(self.current_root, "/"), self.current_root, not segments)
+
+        accumulated = ""
+        for i, seg in enumerate(segments):
+            self.breadcrumb_bar.addWidget(QLabel("\u203a"))
+            accumulated += f"/{seg}"
+            add_crumb(seg, self.current_root + accumulated, i == len(segments) - 1)
+
+        self.breadcrumb_bar.addStretch(1)
 
     def go_up(self):
         if self.current_path in ("/", "", self.current_root):
@@ -331,9 +371,12 @@ class MainWindow(QMainWindow):
 
         if self.current_root == TRASH_ROOT:
             restore_action = menu.addAction(self._icon("refresh", size=16), "Restore")
+            delete_action = menu.addAction(self._icon("delete", size=16), "Delete Permanently\u2026")
             chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
             if chosen == restore_action:
                 self._restore_selected()
+            elif chosen == delete_action:
+                self._permanently_delete_selected()
             return
 
         rename_action = menu.addAction(self._icon("rename", size=16), "Rename\u2026")
@@ -382,6 +425,25 @@ class MainWindow(QMainWindow):
         paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
         self.statusBar().showMessage(f"Restoring {len(paths)} item(s) \u2026")
         self._start_worker(self.cli.restore, paths, on_finished=lambda _: self.refresh())
+
+    def _permanently_delete_selected(self):
+        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        if not rows:
+            return
+        names = [self.items[r].name for r in rows]
+        listing = "\n".join(f"\u2022 {n}" for n in names)
+        confirm = QMessageBox.question(
+            self,
+            "Delete Permanently",
+            f"Permanently delete:\n{listing}\n\nThis cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
+        self.statusBar().showMessage(f"Deleting {len(paths)} item(s) permanently \u2026")
+        self._start_worker(self.cli.delete, paths, on_finished=lambda _: self.refresh())
 
     def empty_trash(self):
         if not self.cli:

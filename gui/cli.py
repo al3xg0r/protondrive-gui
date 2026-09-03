@@ -198,6 +198,11 @@ class ProtonDriveCLI:
     def restore(self, paths: list[str]) -> None:
         self._run(["filesystem", "restore", *paths], json_output=False)
 
+    def delete(self, paths: list[str]) -> None:
+        """Permanent, per-item delete — confirmed via `--help` as
+        `filesystem delete`. Unlike trash(), not reversible."""
+        self._run(["filesystem", "delete", *paths], json_output=False)
+
     def empty_trash(self) -> None:
         """Permanent — confirmed via `--help` as `filesystem empty-trash`,
         no path argument."""
