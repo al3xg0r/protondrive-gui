@@ -21,6 +21,7 @@ Early / minimal. Currently supports:
 - Upload/download progress bar (best-effort — scrapes the CLI's live spinner
   output since there's no `--json` progress format; see caveat in Roadmap)
 - New folder, rename, and move-to-Trash (right-click a row) — "My files" only for now
+- Browse Trash, restore individual items (right-click), and Empty Trash (permanent, confirms first)
 - Log in / log out (`auth login` opens your browser, `auth logout` is instant)
 - Separate "My files" and "Photos" sections — Photos is a flat, most-recent-first
   timeline (no folders, no file size — that's just what the CLI exposes for it)
@@ -121,7 +122,10 @@ Pull requests fixing this for real-world output are very welcome.
 
 ## Roadmap
 
-- [ ] Permanent delete (`filesystem delete`) and empty-Trash — Delete currently only moves to Trash
+- [x] ~~Permanent delete~~ — Empty Trash is wired to `filesystem empty-trash`
+      (confirms first, since it's irreversible); individual permanent delete
+      (`filesystem delete`) on a single item is still only reachable by moving
+      it to Trash first, then emptying Trash
 - [x] ~~Drag & drop upload~~ — drop files onto the window (folders aren't
       supported yet — drop the files inside them instead)
 - [x] ~~Upload/download progress~~ — done, but fragile by nature: it scrapes the

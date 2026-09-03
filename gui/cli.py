@@ -195,6 +195,14 @@ class ProtonDriveCLI:
         `filesystem delete` command."""
         self._run(["filesystem", "trash", *paths], json_output=False)
 
+    def restore(self, paths: list[str]) -> None:
+        self._run(["filesystem", "restore", *paths], json_output=False)
+
+    def empty_trash(self) -> None:
+        """Permanent — confirmed via `--help` as `filesystem empty-trash`,
+        no path argument."""
+        self._run(["filesystem", "empty-trash"], json_output=False)
+
     # -- progress-reporting variants ------------------------------------------
     #
     # The CLI has no --json equivalent for progress (confirmed against the

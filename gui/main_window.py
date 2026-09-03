@@ -54,6 +54,7 @@ def human_size(n) -> str:
 # "/section/..." path, just not exposed as a dedicated button (yet).
 MY_FILES_ROOT = "/my-files"
 PHOTOS_ROOT = "/photos"
+TRASH_ROOT = "/trash"
 
 
 class MainWindow(QMainWindow):
@@ -181,11 +182,19 @@ class MainWindow(QMainWindow):
         self.photos_action.triggered.connect(lambda: self.switch_root(PHOTOS_ROOT))
         toolbar.addAction(self.photos_action)
 
+        self.trash_action = QAction(self._icon("delete"), "Trash", self)
+        self.trash_action.triggered.connect(lambda: self.switch_root(TRASH_ROOT))
+        toolbar.addAction(self.trash_action)
+
         toolbar.addSeparator()
 
         self.new_folder_action = QAction(self._icon("new_folder"), "New folder\u2026", self)
         self.new_folder_action.triggered.connect(self.create_folder)
         toolbar.addAction(self.new_folder_action)
+
+        self.empty_trash_action = QAction(self._icon("delete"), "Empty Trash\u2026", self)
+        self.empty_trash_action.triggered.connect(self.empty_trash)
+        toolbar.addAction(self.empty_trash_action)
 
         toolbar.addSeparator()
 
@@ -273,6 +282,7 @@ class MainWindow(QMainWindow):
         self.path_edit.setEnabled(root != PHOTOS_ROOT)
         self.table.setColumnHidden(1, root == PHOTOS_ROOT)  # no file sizes in Photos
         self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
+        self.upload_action.setEnabled(root != TRASH_ROOT)
         self.navigate_to(root)
 
     def _path_edited(self):
@@ -301,8 +311,8 @@ class MainWindow(QMainWindow):
             self.navigate_to(new_path)
 
     def _show_context_menu(self, pos):
-        if self.current_root != MY_FILES_ROOT:
-            return  # rename/delete are unconfirmed for Photos — skip rather than guess
+        if self.current_root == PHOTOS_ROOT:
+            return  # rename/delete/restore are unconfirmed for Photos — skip rather than guess
         index = self.table.indexAt(pos)
         if not index.isValid():
             return
@@ -311,6 +321,14 @@ class MainWindow(QMainWindow):
             self.table.selectRow(row)
 
         menu = QMenu(self)
+
+        if self.current_root == TRASH_ROOT:
+            restore_action = menu.addAction(self._icon("refresh", size=16), "Restore")
+            chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+            if chosen == restore_action:
+                self._restore_selected()
+            return
+
         rename_action = menu.addAction(self._icon("rename", size=16), "Rename\u2026")
         delete_action = menu.addAction(self._icon("delete", size=16), "Move to Trash\u2026")
         chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
@@ -349,6 +367,29 @@ class MainWindow(QMainWindow):
         paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
         self.statusBar().showMessage(f"Moving {len(paths)} item(s) to Trash \u2026")
         self._start_worker(self.cli.trash, paths, on_finished=lambda _: self.refresh())
+
+    def _restore_selected(self):
+        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        if not rows:
+            return
+        paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
+        self.statusBar().showMessage(f"Restoring {len(paths)} item(s) \u2026")
+        self._start_worker(self.cli.restore, paths, on_finished=lambda _: self.refresh())
+
+    def empty_trash(self):
+        if not self.cli:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Empty Trash",
+            "Permanently delete everything in Trash?\n\nThis cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        self.statusBar().showMessage("Emptying Trash \u2026")
+        self._start_worker(self.cli.empty_trash, on_finished=lambda _: self.refresh())
 
     def create_folder(self):
         if not self.cli:
