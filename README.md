@@ -25,13 +25,15 @@ Early / minimal. Currently supports:
 - Browse Trash, restore or permanently delete individual items (right-click),
   and Empty Trash (only shown while browsing Trash; both confirm first, since
   they're irreversible)
-- Breadcrumb trail showing where you are, click any segment to jump back
+- Breadcrumb trail showing where you are, click any segment to jump back —
+  with a Refresh button and List/Grid view toggle in the same row
 - Log in / log out (`auth login` opens your browser, `auth logout` is instant)
-- Sidebar sections: My files, Photos (flat, most-recent-first timeline — no
-  folders, no file size, just what the CLI exposes for it), Trash, Shared by
-  me, Shared with me (the last two are new and only lightly tested — right-click
-  actions are intentionally disabled there until confirmed safe)
-- List view and grid/tile view, switchable from the toolbar
+- Left sidebar: a prominent "New folder" button up top, then My files, Photos,
+  Trash, Shared by me, Shared with me (the last two are new and only lightly
+  tested — right-click actions are intentionally disabled there until
+  confirmed safe), with the current section highlighted and Log in/About
+  pinned to the bottom
+- List view and grid/tile view, switchable from the top-right of the breadcrumb row
 
 Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
 (invite/remove/set-url), multi-select bulk actions, packaging as an AppImage.
