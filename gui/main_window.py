@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool
@@ -35,6 +36,19 @@ from PySide6.QtWidgets import (
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
 from .icons import DRAWERS, make_icon
 from .workers import Worker
+
+
+def format_timestamp(iso: str) -> str:
+    """The CLI reports timestamps as ISO 8601 UTC, e.g.
+    "2026-07-02T19:26:54.000Z" — 'T' separates date/time, 'Z' means UTC.
+    Shown converted to local time in a plainer format instead."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return iso
 
 
 def human_size(n) -> str:
@@ -233,13 +247,6 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        self.empty_trash_action = QAction(self._icon("delete"), "Empty Trash", self)
-        self.empty_trash_action.triggered.connect(self.empty_trash)
-        self.empty_trash_action.setVisible(False)  # only shown while browsing Trash
-        toolbar.addAction(self.empty_trash_action)
-
-        toolbar.addSeparator()
-
         self.upload_action = QAction(self._icon("upload"), "Upload", self)
         self.upload_action.triggered.connect(self.upload_files)
         toolbar.addAction(self.upload_action)
@@ -247,6 +254,13 @@ class MainWindow(QMainWindow):
         self.download_action = QAction(self._icon("download"), "Download", self)
         self.download_action.triggered.connect(self.download_selected)
         toolbar.addAction(self.download_action)
+
+        toolbar.addSeparator()
+
+        self.empty_trash_action = QAction(self._icon("delete"), "Empty Trash", self)
+        self.empty_trash_action.triggered.connect(self.empty_trash)
+        self.empty_trash_action.setVisible(False)  # only shown while browsing Trash
+        toolbar.addAction(self.empty_trash_action)
 
         # -- left sidebar: create, navigate, account --
         sidebar = QWidget()
@@ -298,6 +312,7 @@ class MainWindow(QMainWindow):
         self._row_folder_icon = self._icon("folder", size=16)
         self._row_file_icon = self._icon("file", size=16)
         self._row_photo_icon = self._icon("photos", size=16)
+        self._row_video_icon = self._icon("video", size=16)
 
         # -- content area: breadcrumb/path row + the file list itself --
         content = QWidget()
@@ -368,7 +383,13 @@ class MainWindow(QMainWindow):
         self.grid.setIconSize(QSize(64, 64))
         self.grid.setResizeMode(QListWidget.Adjust)
         self.grid.setMovement(QListWidget.Static)
-        self.grid.setSpacing(14)
+        # A fixed grid cell size is what actually makes this a *grid* —
+        # without it, Qt lays items out by natural per-item size (varies
+        # with filename length), producing the ragged/uneven flow seen
+        # in testing rather than clean aligned rows and columns.
+        self.grid.setGridSize(QSize(120, 110))
+        self.grid.setUniformItemSizes(True)
+        self.grid.setWordWrap(True)
         self.grid.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.grid.itemDoubleClicked.connect(
             lambda item: self._row_double_clicked(self.grid.row(item), 0)
@@ -476,7 +497,6 @@ class MainWindow(QMainWindow):
     def switch_root(self, root: str):
         self.current_root = root
         self.path_edit.setEnabled(root != PHOTOS_ROOT)
-        self.table.setColumnHidden(1, root == PHOTOS_ROOT)  # no file sizes in Photos
         self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
         self.upload_action.setEnabled(root not in (TRASH_ROOT, SHARED_WITH_ME_ROOT))
         self.empty_trash_action.setVisible(root == TRASH_ROOT)
@@ -701,7 +721,8 @@ class MainWindow(QMainWindow):
             if item.is_folder:
                 icon = self._row_folder_icon
             elif self.current_root == PHOTOS_ROOT:
-                icon = self._row_photo_icon
+                media_type = item.raw.get("mediaType", "")
+                icon = self._row_video_icon if media_type.startswith("video/") else self._row_photo_icon
             else:
                 icon = self._row_file_icon
 
@@ -713,9 +734,13 @@ class MainWindow(QMainWindow):
             if item.is_folder:
                 size_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 1, size_item)
-            self.table.setItem(row, 2, QTableWidgetItem(item.modified or ""))
+            self.table.setItem(row, 2, QTableWidgetItem(format_timestamp(item.modified)))
 
-            self.grid.addItem(QListWidgetItem(icon, item.name))
+            size_label = "" if item.is_folder else human_size(item.size)
+            grid_text = f"{item.name}\n{size_label}" if size_label else item.name
+            grid_item = QListWidgetItem(icon, grid_text)
+            grid_item.setTextAlignment(Qt.AlignHCenter)
+            self.grid.addItem(grid_item)
 
         self.statusBar().showMessage(f"{len(self.items)} file(s)", 3000)
 
@@ -884,9 +909,9 @@ class MainWindow(QMainWindow):
 
         if self.current_root == PHOTOS_ROOT:
             node_uids = [
-                self.items[row].raw.get("nodeUid")
+                self.items[row].raw.get("uid") or self.items[row].raw.get("nodeUid")
                 for row in rows
-                if self.items[row].raw.get("nodeUid")
+                if self.items[row].raw.get("uid") or self.items[row].raw.get("nodeUid")
             ]
             if not node_uids:
                 return
@@ -939,18 +964,29 @@ class MainWindow(QMainWindow):
         local_paths = [
             url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()
         ]
-        files = [p for p in local_paths if Path(p).is_file()]
-        dirs = [p for p in local_paths if Path(p).is_dir()]
+        existing = [p for p in local_paths if Path(p).exists()]
         event.acceptProposedAction()
-
-        if not files:
-            if dirs:
-                QMessageBox.information(
-                    self,
-                    "Folders not supported",
-                    "Drag & drop currently only supports individual files, not whole "
-                    "folders. Drop the files themselves, or use the Upload button.",
-                )
+        if not existing:
             return
 
-        self._upload_paths(files)
+        if self.current_root == PHOTOS_ROOT:
+            # `photo upload`'s docs only show individual files, unlike
+            # `filesystem upload` below — not confirmed for folders.
+            files = [p for p in existing if Path(p).is_file()]
+            dirs = [p for p in existing if Path(p).is_dir()]
+            if not files:
+                if dirs:
+                    QMessageBox.information(
+                        self,
+                        "Folders not supported here",
+                        "Photos upload doesn't accept whole folders — drop individual "
+                        "photo/video files, or use the Upload button.",
+                    )
+                return
+            self._upload_paths(files)
+            return
+
+        # The official CLI docs show `filesystem upload ./local-folder
+        # /my-files/parent` as a normal example, so folders are passed
+        # straight through here too, not just files.
+        self._upload_paths(existing)

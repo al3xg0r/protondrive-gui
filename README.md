@@ -34,6 +34,10 @@ Early / minimal. Currently supports:
   confirmed safe), with the current section highlighted and Log in/About
   pinned to the bottom
 - List view and grid/tile view, switchable from the top-right of the breadcrumb row
+- Photos shows real filenames, real file sizes, and a distinct icon for videos
+  vs photos (`photo timeline -d` turned out far richer than the undetailed
+  version) — no actual image thumbnails though, since the CLI has no
+  lightweight thumbnail-fetch call, only full-file download
 
 Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
 (invite/remove/set-url), multi-select bulk actions, packaging as an AppImage.
@@ -129,8 +133,57 @@ proton-drive filesystem list / --json
 `gui/cli.py` — that's the only place that should need adjusting.
 Pull requests fixing this for real-world output are very welcome.
 
+## What the CLI can and can't do (per its official docs)
+
+Cross-checked against the [official CLI README](https://github.com/ProtonDriveApps/sdk/blob/main/cli/README.md)
+and `--help` output, beyond what's already covered above:
+
+**Confirmed possible, not yet wired into the GUI:**
+- Copy/move (`filesystem copy`, `filesystem move`) — not exposed in the UI yet
+- Sharing management: `sharing status`, `sharing invite`, `sharing leave`,
+  `sharing remove`, `sharing set-url`, `sharing remove-url`, plus
+  `invitation list/accept/reject` — none of this is wired up; the GUI can
+  only *browse* Shared by me/Shared with me so far
+- Albums (`album list/create/update/delete/photos/add-photo/remove-photo`)
+  — entirely separate from the Photos timeline view, not touched at all
+- Folder uploads via `filesystem upload` (confirmed by the docs' own example,
+  `filesystem upload ./local-folder /my-files/parent`) — now supported via
+  drag & drop in My files
+
+**Confirmed not possible, at least not through this CLI:**
+- Account name, email, or storage quota — no `whoami`/`account`/`quota`
+  command exists
+- Real image/video thumbnails — the CLI generates WebP thumbnails *on
+  upload* for the official apps' own use, but exposes no command to fetch
+  one back down; only full-file `photo download` gets you actual pixels
+- Folder uploads for Photos specifically — the docs' folder-upload example
+  is for `filesystem upload`, not `photo upload`; unconfirmed either way
+
+**Background/context that doesn't change the GUI, but explains some quirks:**
+- The CLI is built on Bun and its own SDK, which the docs describe as
+  **not yet ready for third-party production use** and expected to change —
+  Proton's own words, not a knock on this project; it's part of why some of
+  this app's parsing is defensive/best-effort rather than a stable contract
+- Proton has an upcoming cryptographic migration for Drive that could
+  change output shapes again in the future
+- Credentials live in your OS's secret store (libsecret on Linux) under the
+  service `ch.proton.drive/drive-sdk-cli` — nothing this GUI touches directly
+- CLI cache/logs live under `~/.cache/proton-drive-cli`,
+  `~/.local/share/proton-drive-cli`, and `~/.local/state/proton-drive-cli`
+  by default (or wherever `$PROTON_DRIVE_CACHE_DIR` points, if you set it) —
+  useful to know when troubleshooting CLI-level issues that aren't this GUI's fault
+
 ## Roadmap
 
+- [x] ~~Real names/sizes for Photos~~ — `photo timeline -d` exposes the real
+      filename, size, and media type, so Photos no longer shows bare capture
+      dates as placeholder names
+- [ ] Real image thumbnails in the Photos grid — deliberately not implemented;
+      confirmed against the official CLI docs (thumbnails are only generated
+      *on upload*, as WebP, for the official apps' own use — there's no
+      subcommand to fetch one back down, only full-file `photo download`).
+      Would mean silently downloading full photos/videos just to render a
+      grid. Revisit if Proton ever exposes a thumbnail-fetch endpoint.
 - [x] ~~Delete key shortcut~~ — moves the selection to Trash in My files, with confirmation
 - [x] ~~List/grid view toggle~~ — in the top toolbar
 - [x] ~~Shared by me / Shared with me~~ — added as sidebar sections; listing
@@ -147,8 +200,10 @@ Pull requests fixing this for real-world output are very welcome.
       per-item Delete Permanently (`filesystem delete`, right-click in Trash)
       are both wired up, each confirms first since they're irreversible
 - [x] ~~Breadcrumbs~~ — clickable trail above the file list
-- [x] ~~Drag & drop upload~~ — drop files onto the window (folders aren't
-      supported yet — drop the files inside them instead)
+- [x] ~~Drag & drop upload~~ — drop files (and, in My files, whole folders too
+      — the official CLI docs show `filesystem upload ./local-folder
+      /my-files/parent` as a normal example) onto the window. Photos upload
+      is still files-only; folder support there is unconfirmed.
 - [x] ~~Upload/download progress~~ — done, but fragile by nature: it scrapes the
       CLI's live spinner text (`NN.NN% name (size)`), which isn't a documented
       format and has no `--json` equivalent as of CLI 0.8.0. May silently stop

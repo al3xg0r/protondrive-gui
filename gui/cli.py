@@ -294,23 +294,46 @@ class ProtonDriveCLI:
     # filesystem tree at all, it's a separate flat command namespace
     # (`photo timeline` / `photo upload` / `photo download`).
     #
-    # `photo timeline --json` returns entries like:
-    #   {"nodeUid": "...", "captureTime": "2026-08-01T05:24:49.000Z", "tags": []}
-    # No filename, no size, no path — just an opaque id + capture date.
+    # `photo timeline --json` (no flag) is nearly useless: just
+    #   {"nodeUid": "...", "captureTime": "...", "tags": []}
+    # — no filename, no size. `photo timeline -d --json` (load details)
+    # is much richer and mirrors the regular filesystem entry shape:
+    #   "name": {"ok": true, "value": "IMG_....jpg"} (same wrapped/
+    #     decrypted-client-side format as filesystem entries)
+    #   "mediaType": "image/jpeg" | "video/mp4" | ...
+    #   "activeRevision": {"claimedSize": <real original file size>, ...}
+    #   "photo": {"captureTime": "...", ...}
+    # The id field is called "uid" here, NOT "nodeUid" as in the
+    # undetailed listing — download_selected() checks both defensively.
+    # Still no actual thumbnail/preview image data of any kind, though —
+    # getting real pixels requires a full `photo download` per item.
+    #
     # `photo download` accepts a node UID standing in for a name inside a
     # normal path, confirmed working as "/photos/<NODE-UID>".
 
     def list_photos(self) -> list[DriveItem]:
-        data = self._run(["photo", "timeline"])
+        data = self._run(["photo", "timeline", "-d"])
         items = data if isinstance(data, list) else []
         result = []
         for raw in items:
-            capture = raw.get("captureTime")
-            label = capture.replace("T", " ").replace(".000Z", "") if capture else raw.get(
-                "nodeUid", "?"
-            )
+            name = raw.get("name")
+            if isinstance(name, dict):
+                name = name.get("value") if name.get("ok", True) else "<undecryptable name>"
+            capture = (raw.get("photo") or {}).get("captureTime") or raw.get("captureTime")
+            if not name:
+                name = (
+                    capture.replace("T", " ").replace(".000Z", "")
+                    if capture
+                    else raw.get("uid", raw.get("nodeUid", "?"))
+                )
+
+            active_revision = raw.get("activeRevision")
+            if not isinstance(active_revision, dict):
+                active_revision = {}
+            size = active_revision.get("claimedSize") or raw.get("totalStorageSize")
+
             result.append(
-                DriveItem(name=label, is_folder=False, size=None, modified=capture, raw=raw)
+                DriveItem(name=name, is_folder=False, size=size, modified=capture, raw=raw)
             )
         return result
 

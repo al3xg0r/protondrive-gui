@@ -77,6 +77,22 @@ def draw_photos(p: QPainter, s: int):
     p.drawEllipse(QRectF(x + w * 0.32, y + h * 0.18, w * 0.36, w * 0.36))
 
 
+def draw_video(p: QPainter, s: int):
+    w, h = s * 0.72, s * 0.54
+    x, y = (s - w) / 2, (s - h) / 2 + s * 0.08
+    p.drawRoundedRect(QRectF(x, y, w, h), s * 0.06, s * 0.06)
+    cx, cy = x + w / 2, y + h / 2
+    tri_half_w, tri_half_h = w * 0.16, h * 0.22
+    path = QPainterPath()
+    path.moveTo(cx - tri_half_w, cy - tri_half_h)
+    path.lineTo(cx - tri_half_w, cy + tri_half_h)
+    path.lineTo(cx + tri_half_w * 1.4, cy)
+    path.closeSubpath()
+    p.setBrush(p.pen().color())
+    p.drawPath(path)
+    p.setBrush(Qt.NoBrush)
+
+
 def draw_upload(p: QPainter, s: int):
     cx = s / 2
     top, bottom = s * 0.22, s * 0.78
@@ -195,6 +211,7 @@ DRAWERS = {
     "refresh": draw_refresh,
     "folder": draw_folder,
     "photos": draw_photos,
+    "video": draw_video,
     "upload": draw_upload,
     "download": draw_download,
     "login": draw_login,
