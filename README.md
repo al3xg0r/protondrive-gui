@@ -237,7 +237,15 @@ need changes in one of the two.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, with one addition: forks and redistributions must keep a visible link
+back to this repository (private, non-redistributed use doesn't need it).
+See [LICENSE](LICENSE) for the exact wording.
+
+Note: this isn't a standard OSI-approved license anymore once that clause is
+added, so GitHub's license detector may show it as "Other" rather than
+"MIT" — the terms are otherwise identical to MIT. This isn't legal advice;
+if attribution enforcement matters a lot to you, it's worth a quick look by
+someone qualified.
 
 ---
 

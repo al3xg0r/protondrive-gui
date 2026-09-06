@@ -1,4 +1,4 @@
-MIT License
+MIT License (with Attribution Requirement)
 
 Copyright (c) 2026 protondrive-gui contributors
 
@@ -11,6 +11,18 @@ furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
+
+Additional Attribution Requirement:
+Any distribution, publication, or public deployment of this Software, or of a
+substantial portion of it — including forks, modified versions, and other
+derivative works — must retain a visible and functional link to the original
+repository:
+
+    https://github.com/al3xg0r/protondrive-gui
+
+placed somewhere reasonably discoverable by end users (for example: the
+About dialog, the README, or a footer/credits screen). Private, personal use
+without redistribution does not require this.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
