@@ -1,8 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="#6d4aff"/>
-  <path d="M14 108 L14 50 L54 50 L62 36 L114 36 L114 108 Z" fill="#ffffff"/>
-  <path d="M84 72 v-9 a9 9 0 0 1 18 0 v9" fill="none" stroke="#4a2fb8" stroke-width="6" stroke-linecap="round"/>
-  <rect x="78" y="72" width="30" height="24" rx="5" fill="#4a2fb8"/>
-  <circle cx="93" cy="82" r="3.2" fill="#ffffff"/>
-  <rect x="91.4" y="82" width="3.2" height="7" fill="#ffffff"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b6dff"/>
+      <stop offset="1" stop-color="#5a35d6"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <ellipse cx="46" cy="72" rx="17" ry="15" fill="#ffffff"/>
+  <ellipse cx="68" cy="60" rx="22" ry="20" fill="#ffffff"/>
+  <ellipse cx="90" cy="72" rx="15" ry="13" fill="#ffffff"/>
+  <rect x="40" y="68" width="56" height="22" rx="11" fill="#ffffff"/>
+  <path d="M68 56 v20" fill="none" stroke="url(#bg)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M59 66 L68 56 L77 66" fill="none" stroke="url(#bg)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

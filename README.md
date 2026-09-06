@@ -26,14 +26,20 @@ Early / minimal. Currently supports:
   and Empty Trash (only shown while browsing Trash; both confirm first, since
   they're irreversible)
 - Breadcrumb trail showing where you are, click any segment to jump back —
-  with a Refresh button and List/Grid view toggle in the same row
+  with a Refresh button, a "Go to path…" button (for typing an exact path,
+  e.g. into sections without a sidebar shortcut), and List/Grid view toggle,
+  all in the same row. No more permanently-visible path bar.
 - Log in / log out (`auth login` opens your browser, `auth logout` is instant)
 - Left sidebar: a prominent "New folder" button up top, then My files, Photos,
   Trash, Shared by me, Shared with me (the last two are new and only lightly
   tested — right-click actions are intentionally disabled there until
   confirmed safe), with the current section highlighted and Log in/About
   pinned to the bottom
-- List view and grid/tile view, switchable from the top-right of the breadcrumb row
+- List view and grid/tile view, switchable from the top-right of the breadcrumb
+  row. Grid view uses a real fixed grid layout with color-coded icons (amber
+  folders, blue photos, red videos, grey generic files) and filenames elided
+  to keep the extension visible, rather than the ragged, all-one-color,
+  cut-off-mid-word layout from earlier testing.
 - Photos shows real filenames, real file sizes, and a distinct icon for videos
   vs photos (`photo timeline -d` turned out far richer than the undetailed
   version) — no actual image thumbnails though, since the CLI has no
@@ -175,6 +181,11 @@ and `--help` output, beyond what's already covered above:
 
 ## Roadmap
 
+- [ ] Local folder sync — the CLI has no watch/sync mode at all, only manual
+      upload/download; any "sync" here would be built on top (watch a local
+      folder, auto-upload on change; optionally poll the remote folder too
+      for two-way). Deliberately postponed — two-way sync in particular
+      risks real data loss (conflicts, deletions) if rushed.
 - [x] ~~Real names/sizes for Photos~~ — `photo timeline -d` exposes the real
       filename, size, and media type, so Photos no longer shows bare capture
       dates as placeholder names

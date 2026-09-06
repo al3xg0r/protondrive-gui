@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QPalette
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -65,6 +65,21 @@ def human_size(n) -> str:
     return f"{n:.1f} PB"
 
 
+def elide_filename(name: str, max_len: int = 15) -> str:
+    """Qt's default grid-item eliding just hard-truncates ("photo_2026-0…"),
+    which loses the one detail (the extension) that actually helps tell
+    files apart at a glance in a grid. Keeps the start and the extension,
+    eliding only the middle instead."""
+    if len(name) <= max_len:
+        return name
+    dot = name.rfind(".")
+    if 0 < dot and len(name) - dot <= 6:
+        ext = name[dot:]
+        head = max(1, max_len - len(ext) - 1)
+        return f"{name[:head]}\u2026{ext}"
+    return f"{name[: max_len - 1]}\u2026"
+
+
 # The CLI's root listing ("/") only shows Proton's virtual top-level
 # sections (my-files, devices, photos, shared-by-me, shared-with-me,
 # trash, albums, ...) rather than actual files. For a "what's actually
@@ -111,6 +126,24 @@ _SIDEBAR_STYLESHEET = """
     QToolButton#newFolderButton:hover { background: palette(highlight); }
     QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
 """
+
+_GRID_BASE_STYLE = """
+    QListWidget { border: none; }
+    QListWidget::item {
+        border-radius: 10px;
+        padding: 6px;
+        background: palette(alternate-base);
+    }
+    QListWidget::item:hover { background: palette(midlight); }
+    QListWidget::item:selected {
+        background: palette(highlight);
+        color: palette(highlighted-text);
+    }
+"""
+_GRID_DRAG_OVER_STYLE = _GRID_BASE_STYLE + (
+    "QListWidget { border: 2px dashed palette(highlight); }"
+)
+_TABLE_DRAG_OVER_STYLE = "QTableWidget { border: 2px dashed palette(highlight); }"
 
 
 class MainWindow(QMainWindow):
@@ -215,8 +248,8 @@ class MainWindow(QMainWindow):
 
     # -- icons ------------------------------------------------------------
 
-    def _icon(self, name: str, size: int = 20) -> QIcon:
-        color = self.palette().color(QPalette.WindowText)
+    def _icon(self, name: str, size: int = 20, color: QColor | None = None) -> QIcon:
+        color = color or self.palette().color(QPalette.WindowText)
         return make_icon(DRAWERS[name], color, size)
 
     # -- setup ---------------------------------------------------------------
@@ -314,6 +347,17 @@ class MainWindow(QMainWindow):
         self._row_photo_icon = self._icon("photos", size=16)
         self._row_video_icon = self._icon("video", size=16)
 
+        # Grid icons are drawn at their real display size (not upscaled
+        # from the small 16px row icons, which looked blurry/pixelated
+        # once Qt stretched them to fill a 64px grid slot) and colored
+        # per type — plain single-tone icons made a photo grid look flat
+        # and "terrible" in testing; folder/photo/video now read apart at
+        # a glance even without real thumbnails.
+        self._grid_folder_icon = self._icon("folder", size=48, color=QColor("#e8a838"))
+        self._grid_file_icon = self._icon("file", size=48, color=QColor("#8a8f98"))
+        self._grid_photo_icon = self._icon("photos", size=48, color=QColor("#4f9ce8"))
+        self._grid_video_icon = self._icon("video", size=48, color=QColor("#e0654f"))
+
         # -- content area: breadcrumb/path row + the file list itself --
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -328,6 +372,13 @@ class MainWindow(QMainWindow):
         refresh_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
         refresh_btn.setAutoRaise(True)
         crumb_row.addWidget(refresh_btn)
+
+        self.goto_path_button = QToolButton()
+        self.goto_path_button.setText("\u2026")
+        self.goto_path_button.setToolTip("Go to path\u2026")
+        self.goto_path_button.setAutoRaise(True)
+        self.goto_path_button.clicked.connect(self._prompt_goto_path)
+        crumb_row.addWidget(self.goto_path_button)
 
         self.breadcrumb_bar = QHBoxLayout()
         crumb_row.addLayout(self.breadcrumb_bar)
@@ -358,13 +409,6 @@ class MainWindow(QMainWindow):
 
         content_layout.addLayout(crumb_row)
 
-        path_row = QHBoxLayout()
-        path_row.addWidget(QLabel("Path:"))
-        self.path_edit = QLineEdit(self._display_path(self.current_path))
-        self.path_edit.returnPressed.connect(self._path_edited)
-        path_row.addWidget(self.path_edit)
-        content_layout.addLayout(path_row)
-
         self.view_stack = QStackedWidget()
 
         self.table = QTableWidget(0, 3)
@@ -380,16 +424,18 @@ class MainWindow(QMainWindow):
 
         self.grid = QListWidget()
         self.grid.setViewMode(QListWidget.IconMode)
-        self.grid.setIconSize(QSize(64, 64))
+        self.grid.setIconSize(QSize(56, 56))
         self.grid.setResizeMode(QListWidget.Adjust)
         self.grid.setMovement(QListWidget.Static)
         # A fixed grid cell size is what actually makes this a *grid* —
         # without it, Qt lays items out by natural per-item size (varies
         # with filename length), producing the ragged/uneven flow seen
         # in testing rather than clean aligned rows and columns.
-        self.grid.setGridSize(QSize(120, 110))
+        self.grid.setGridSize(QSize(132, 128))
         self.grid.setUniformItemSizes(True)
         self.grid.setWordWrap(True)
+        self.grid.setSpacing(4)
+        self.grid.setStyleSheet(_GRID_BASE_STYLE)
         self.grid.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.grid.itemDoubleClicked.connect(
             lambda item: self._row_double_clicked(self.grid.row(item), 0)
@@ -496,7 +542,7 @@ class MainWindow(QMainWindow):
 
     def switch_root(self, root: str):
         self.current_root = root
-        self.path_edit.setEnabled(root != PHOTOS_ROOT)
+        self.goto_path_button.setEnabled(root != PHOTOS_ROOT)
         self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
         self.upload_action.setEnabled(root not in (TRASH_ROOT, SHARED_WITH_ME_ROOT))
         self.empty_trash_action.setVisible(root == TRASH_ROOT)
@@ -504,12 +550,16 @@ class MainWindow(QMainWindow):
             action.setChecked(r == root)
         self.navigate_to(root)
 
-    def _path_edited(self):
-        self.navigate_to(self._actual_path(self.path_edit.text()))
+    def _prompt_goto_path(self):
+        text, ok = QInputDialog.getText(
+            self, "Go to path", "Path:", text=self._display_path(self.current_path)
+        )
+        if not ok or not text.strip():
+            return
+        self.navigate_to(self._actual_path(text))
 
     def navigate_to(self, path: str):
         self.current_path = path if path.startswith("/") else f"/{path}"
-        self.path_edit.setText(self._display_path(self.current_path))
         self.back_action.setEnabled(self.current_path != self.current_root)
         self._update_breadcrumbs()
         self.refresh()
@@ -718,16 +768,19 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(len(self.items))
         self.grid.clear()
         for row, item in enumerate(self.items):
+            media_type = item.raw.get("mediaType", "") if self.current_root == PHOTOS_ROOT else ""
+            is_video = media_type.startswith("video/")
+
             if item.is_folder:
-                icon = self._row_folder_icon
+                table_icon, grid_icon = self._row_folder_icon, self._grid_folder_icon
             elif self.current_root == PHOTOS_ROOT:
-                media_type = item.raw.get("mediaType", "")
-                icon = self._row_video_icon if media_type.startswith("video/") else self._row_photo_icon
+                table_icon = self._row_video_icon if is_video else self._row_photo_icon
+                grid_icon = self._grid_video_icon if is_video else self._grid_photo_icon
             else:
-                icon = self._row_file_icon
+                table_icon, grid_icon = self._row_file_icon, self._grid_file_icon
 
             name_item = QTableWidgetItem(item.name)
-            name_item.setIcon(icon)
+            name_item.setIcon(table_icon)
             self.table.setItem(row, 0, name_item)
             size_text = "\u2014" if item.is_folder else human_size(item.size)
             size_item = QTableWidgetItem(size_text)
@@ -737,9 +790,11 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, 2, QTableWidgetItem(format_timestamp(item.modified)))
 
             size_label = "" if item.is_folder else human_size(item.size)
-            grid_text = f"{item.name}\n{size_label}" if size_label else item.name
-            grid_item = QListWidgetItem(icon, grid_text)
+            display_name = elide_filename(item.name)
+            grid_text = f"{display_name}\n{size_label}" if size_label else display_name
+            grid_item = QListWidgetItem(grid_icon, grid_text)
             grid_item.setTextAlignment(Qt.AlignHCenter)
+            grid_item.setToolTip(f"{item.name}\n{size_label}" if size_label else item.name)
             self.grid.addItem(grid_item)
 
         self.statusBar().showMessage(f"{len(self.items)} file(s)", 3000)
@@ -942,9 +997,8 @@ class MainWindow(QMainWindow):
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-            style = "QTableWidget, QListWidget { border: 2px dashed palette(highlight); }"
-            self.table.setStyleSheet(style)
-            self.grid.setStyleSheet(style)
+            self.table.setStyleSheet(_TABLE_DRAG_OVER_STYLE)
+            self.grid.setStyleSheet(_GRID_DRAG_OVER_STYLE)
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasUrls():
@@ -952,11 +1006,11 @@ class MainWindow(QMainWindow):
 
     def dragLeaveEvent(self, event):
         self.table.setStyleSheet("")
-        self.grid.setStyleSheet("")
+        self.grid.setStyleSheet(_GRID_BASE_STYLE)
 
     def dropEvent(self, event):
         self.table.setStyleSheet("")
-        self.grid.setStyleSheet("")
+        self.grid.setStyleSheet(_GRID_BASE_STYLE)
         if not self.cli:
             event.ignore()
             return
