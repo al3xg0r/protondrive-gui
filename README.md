@@ -10,6 +10,8 @@ A minimal desktop GUI wrapper around the official [Proton Drive CLI](https://pro
 > cross-platform, so it may run on Windows/macOS with some tweaks, but that's
 > untested and unsupported for now.
 
+![Proton Drive GUI screenshot](https://apphub.4everbucket.com/protondrive-gui.png)
+
 ## Status
 
 Early / minimal. Currently supports:

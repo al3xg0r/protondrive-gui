@@ -120,10 +120,10 @@ _SIDEBAR_STYLESHEET = """
     QToolButton:hover { background: palette(alternate-base); }
     QToolButton:checked { background: palette(highlight); color: palette(highlighted-text); }
     QToolButton#newFolderButton {
-        background: palette(highlight); color: palette(highlighted-text);
+        background: #1f9d55; color: #ffffff;
         font-weight: bold; padding: 8px;
     }
-    QToolButton#newFolderButton:hover { background: palette(highlight); }
+    QToolButton#newFolderButton:hover { background: #24b563; }
     QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
 """
 
@@ -320,7 +320,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(3)
         self._sidebar = sidebar
 
-        self.new_folder_action = QAction(self._icon("new_folder"), "New folder", self)
+        self.new_folder_action = QAction(self._icon("new_folder", color=QColor("#ffffff")), "New folder", self)
         self.new_folder_action.triggered.connect(self.create_folder)
         sidebar_layout.addWidget(self._sidebar_button(self.new_folder_action, "newFolderButton"))
         sidebar_layout.addSpacing(10)
