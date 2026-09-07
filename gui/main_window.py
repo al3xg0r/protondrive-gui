@@ -143,7 +143,24 @@ _GRID_BASE_STYLE = """
 _GRID_DRAG_OVER_STYLE = _GRID_BASE_STYLE + (
     "QListWidget { border: 2px dashed palette(highlight); }"
 )
-_TABLE_DRAG_OVER_STYLE = "QTableWidget { border: 2px dashed palette(highlight); }"
+_TABLE_BASE_STYLE = """
+    QTableWidget { border: none; gridline-color: transparent; }
+    QHeaderView::section {
+        background: palette(window);
+        border: none;
+        border-bottom: 1px solid palette(mid);
+        padding: 6px 10px;
+        font-weight: 600;
+    }
+    QTableWidget::item { padding: 2px 8px; }
+    QTableWidget::item:selected {
+        background: palette(highlight);
+        color: palette(highlighted-text);
+    }
+"""
+_TABLE_DRAG_OVER_STYLE = _TABLE_BASE_STYLE + (
+    "QTableWidget { border: 2px dashed palette(highlight); }"
+)
 
 
 class MainWindow(QMainWindow):
@@ -342,21 +359,25 @@ class MainWindow(QMainWindow):
 
         self.root_actions[MY_FILES_ROOT].setChecked(True)
 
-        self._row_folder_icon = self._icon("folder", size=16)
-        self._row_file_icon = self._icon("file", size=16)
-        self._row_photo_icon = self._icon("photos", size=16)
-        self._row_video_icon = self._icon("video", size=16)
+        # Same color coding used everywhere an item shows up — list rows
+        # and grid tiles alike — so a photo looks like a photo whether
+        # you're browsing My files or Photos. Row icons are drawn at
+        # their real display size rather than a small size later stretched
+        # by Qt, which looked blurry/pixelated in testing.
+        folder_color = QColor("#e8a838")
+        file_color = QColor("#8a8f98")
+        photo_color = QColor("#4f9ce8")
+        video_color = QColor("#e0654f")
 
-        # Grid icons are drawn at their real display size (not upscaled
-        # from the small 16px row icons, which looked blurry/pixelated
-        # once Qt stretched them to fill a 64px grid slot) and colored
-        # per type — plain single-tone icons made a photo grid look flat
-        # and "terrible" in testing; folder/photo/video now read apart at
-        # a glance even without real thumbnails.
-        self._grid_folder_icon = self._icon("folder", size=48, color=QColor("#e8a838"))
-        self._grid_file_icon = self._icon("file", size=48, color=QColor("#8a8f98"))
-        self._grid_photo_icon = self._icon("photos", size=48, color=QColor("#4f9ce8"))
-        self._grid_video_icon = self._icon("video", size=48, color=QColor("#e0654f"))
+        self._row_folder_icon = self._icon("folder", size=20, color=folder_color)
+        self._row_file_icon = self._icon("file", size=20, color=file_color)
+        self._row_photo_icon = self._icon("photos", size=20, color=photo_color)
+        self._row_video_icon = self._icon("video", size=20, color=video_color)
+
+        self._grid_folder_icon = self._icon("folder", size=48, color=folder_color)
+        self._grid_file_icon = self._icon("file", size=48, color=file_color)
+        self._grid_photo_icon = self._icon("photos", size=48, color=photo_color)
+        self._grid_video_icon = self._icon("video", size=48, color=video_color)
 
         # -- content area: breadcrumb/path row + the file list itself --
         content = QWidget()
@@ -414,6 +435,18 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Name", "Size", "Modified"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setHighlightSections(False)
+        # A classic spreadsheet look (row numbers, hard grid lines) is
+        # what made this feel dated / "like an old PC folder" in testing —
+        # dropped in favor of the row-list look real file managers use.
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(34)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setIconSize(QSize(20, 20))
+        self.table.setStyleSheet(_TABLE_BASE_STYLE)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.cellDoubleClicked.connect(self._row_double_clicked)
@@ -768,14 +801,20 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(len(self.items))
         self.grid.clear()
         for row, item in enumerate(self.items):
-            media_type = item.raw.get("mediaType", "") if self.current_root == PHOTOS_ROOT else ""
+            # Media type is present on regular filesystem entries too (not
+            # just Photos) — apply the same folder/photo/video/file color
+            # coding everywhere instead of only inside the Photos section,
+            # so a .jpg in My files looks the same as one in Photos.
+            media_type = item.raw.get("mediaType", "")
             is_video = media_type.startswith("video/")
+            is_image = media_type.startswith("image/")
 
             if item.is_folder:
                 table_icon, grid_icon = self._row_folder_icon, self._grid_folder_icon
-            elif self.current_root == PHOTOS_ROOT:
-                table_icon = self._row_video_icon if is_video else self._row_photo_icon
-                grid_icon = self._grid_video_icon if is_video else self._grid_photo_icon
+            elif is_video:
+                table_icon, grid_icon = self._row_video_icon, self._grid_video_icon
+            elif is_image:
+                table_icon, grid_icon = self._row_photo_icon, self._grid_photo_icon
             else:
                 table_icon, grid_icon = self._row_file_icon, self._grid_file_icon
 
@@ -1005,11 +1044,11 @@ class MainWindow(QMainWindow):
             event.acceptProposedAction()
 
     def dragLeaveEvent(self, event):
-        self.table.setStyleSheet("")
+        self.table.setStyleSheet(_TABLE_BASE_STYLE)
         self.grid.setStyleSheet(_GRID_BASE_STYLE)
 
     def dropEvent(self, event):
-        self.table.setStyleSheet("")
+        self.table.setStyleSheet(_TABLE_BASE_STYLE)
         self.grid.setStyleSheet(_GRID_BASE_STYLE)
         if not self.cli:
             event.ignore()

@@ -36,10 +36,12 @@ Early / minimal. Currently supports:
   confirmed safe), with the current section highlighted and Log in/About
   pinned to the bottom
 - List view and grid/tile view, switchable from the top-right of the breadcrumb
-  row. Grid view uses a real fixed grid layout with color-coded icons (amber
-  folders, blue photos, red videos, grey generic files) and filenames elided
-  to keep the extension visible, rather than the ragged, all-one-color,
-  cut-off-mid-word layout from earlier testing.
+  row. Both use the same color-coded icons everywhere (amber folders, blue
+  photos, red videos, grey generic files — a .jpg looks the same whether
+  you're in My files or Photos) and filenames elided to keep the extension
+  visible. List view drops the old spreadsheet look (row numbers, hard grid
+  lines) for a plain modern row list with alternating rows; grid view uses a
+  real fixed grid instead of the earlier ragged flow layout.
 - Photos shows real filenames, real file sizes, and a distinct icon for videos
   vs photos (`photo timeline -d` turned out far richer than the undetailed
   version) — no actual image thumbnails though, since the CLI has no
