@@ -4,6 +4,7 @@ __pycache__/
 venv/
 *.egg-info/
 build/
+build-appimage/
 dist/
 .idea/
 .vscode/

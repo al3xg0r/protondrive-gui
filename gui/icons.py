@@ -17,7 +17,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 
-def make_icon(draw_fn, color: QColor, size: int = 20) -> QIcon:
+def render_pixmap(draw_fn, color: QColor, size: int = 20) -> QPixmap:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
@@ -29,7 +29,36 @@ def make_icon(draw_fn, color: QColor, size: int = 20) -> QIcon:
     painter.setBrush(Qt.NoBrush)
     draw_fn(painter, size)
     painter.end()
-    return QIcon(pixmap)
+    return pixmap
+
+
+def make_icon(draw_fn, color: QColor, size: int = 20) -> QIcon:
+    return QIcon(render_pixmap(draw_fn, color, size))
+
+
+def make_stateful_icon(
+    draw_fn,
+    size: int,
+    normal_color: QColor,
+    checked_color: QColor | None = None,
+    disabled_color: QColor | None = None,
+) -> QIcon:
+    """Like make_icon, but bakes in extra variants so Qt automatically
+    swaps to the right one — instead of a single fixed-color icon looking
+    wrong once the button becomes disabled (still full-color, "like an
+    eyesore" against muted/disabled text) or checked (sidebar selection
+    highlight): QIcon.Off/On covers checkable buttons (e.g. the sidebar's
+    current-section highlight), QIcon.Disabled covers setEnabled(False)."""
+    icon = QIcon()
+    icon.addPixmap(render_pixmap(draw_fn, normal_color, size), QIcon.Normal, QIcon.Off)
+    if checked_color is not None:
+        icon.addPixmap(render_pixmap(draw_fn, checked_color, size), QIcon.Normal, QIcon.On)
+    if disabled_color is not None:
+        icon.addPixmap(render_pixmap(draw_fn, disabled_color, size), QIcon.Disabled, QIcon.Off)
+        icon.addPixmap(
+            render_pixmap(draw_fn, disabled_color, size), QIcon.Disabled, QIcon.On
+        )
+    return icon
 
 
 def _line(p: QPainter, x1, y1, x2, y2):
@@ -154,6 +183,63 @@ def draw_file(p: QPainter, s: int):
     _line(p, x + w - fold, y + fold, x + w, y + fold)
 
 
+def draw_spreadsheet(p: QPainter, s: int):
+    w, h = s * 0.56, s * 0.72
+    x, y = (s - w) / 2, (s - h) / 2
+    fold = w * 0.32
+    path = QPainterPath()
+    path.moveTo(x, y)
+    path.lineTo(x + w - fold, y)
+    path.lineTo(x + w, y + fold)
+    path.lineTo(x + w, y + h)
+    path.lineTo(x, y + h)
+    path.closeSubpath()
+    p.drawPath(path)
+    _line(p, x + w - fold, y, x + w - fold, y + fold)
+    _line(p, x + w - fold, y + fold, x + w, y + fold)
+    top, bottom = y + h * 0.42, y + h * 0.9
+    left, right = x + w * 0.14, x + w * 0.86
+    for i in range(3):
+        gx = left + (right - left) * i / 2
+        _line(p, gx, top, gx, bottom)
+    for j in range(3):
+        gy = top + (bottom - top) * j / 2
+        _line(p, left, gy, right, gy)
+
+
+def draw_archive(p: QPainter, s: int):
+    w, h = s * 0.56, s * 0.72
+    x, y = (s - w) / 2, (s - h) / 2
+    fold = w * 0.32
+    path = QPainterPath()
+    path.moveTo(x, y)
+    path.lineTo(x + w - fold, y)
+    path.lineTo(x + w, y + fold)
+    path.lineTo(x + w, y + h)
+    path.lineTo(x, y + h)
+    path.closeSubpath()
+    p.drawPath(path)
+    _line(p, x + w - fold, y, x + w - fold, y + fold)
+    _line(p, x + w - fold, y + fold, x + w, y + fold)
+    cx = x + w * 0.5
+    top, bottom = y + h * 0.16, y + h * 0.92
+    _line(p, cx, top, cx, bottom)
+    for i in range(4):
+        ny = top + (bottom - top) * (i + 0.5) / 4
+        side = s * 0.05 if i % 2 == 0 else -s * 0.05
+        _line(p, cx, ny, cx + side, ny)
+
+
+def draw_audio(p: QPainter, s: int):
+    cx, cy, r = s * 0.38, s * 0.68, s * 0.11
+    p.setBrush(p.pen().color())
+    p.drawEllipse(QRectF(cx - r, cy - r, 2 * r, 2 * r))
+    p.setBrush(Qt.NoBrush)
+    stem_x, stem_top = cx + r * 0.85, s * 0.22
+    _line(p, stem_x, cy, stem_x, stem_top)
+    _line(p, stem_x, stem_top, stem_x + s * 0.16, stem_top + s * 0.12)
+
+
 def draw_new_folder(p: QPainter, s: int):
     draw_folder(p, s * 0.85)
     cx, cy, r = s * 0.76, s * 0.7, s * 0.16
@@ -224,4 +310,7 @@ DRAWERS = {
     "shared": draw_shared,
     "list_view": draw_list_view,
     "grid_view": draw_grid_view,
+    "spreadsheet": draw_spreadsheet,
+    "archive": draw_archive,
+    "audio": draw_audio,
 }

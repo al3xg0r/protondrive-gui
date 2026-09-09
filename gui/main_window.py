@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
-from .icons import DRAWERS, make_icon
+from .icons import DRAWERS, make_icon, make_stateful_icon
 from .workers import Worker
 
 
@@ -78,6 +78,31 @@ def elide_filename(name: str, max_len: int = 15) -> str:
         head = max(1, max_len - len(ext) - 1)
         return f"{name[:head]}\u2026{ext}"
     return f"{name[: max_len - 1]}\u2026"
+
+
+# Extension -> icon-set key, for file types the CLI's mediaType field
+# doesn't classify (it only reliably marks image/* and video/*, per
+# everything seen from the real API so far). Purely a client-side guess
+# based on the filename, same as any desktop file manager or web app —
+# no CLI call involved.
+_EXTENSION_CATEGORIES = {
+    "spreadsheet": {".xls", ".xlsx", ".xlsm", ".csv", ".ods", ".numbers", ".tsv"},
+    "archive": {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz"},
+    "audio": {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus"},
+}
+
+
+def guess_file_category(name: str) -> str | None:
+    """Returns an icon-set key ("spreadsheet"/"archive"/"audio") or None
+    for anything else (falls back to the generic file icon)."""
+    dot = name.rfind(".")
+    if dot < 0:
+        return None
+    ext = name[dot:].lower()
+    for category, exts in _EXTENSION_CATEGORIES.items():
+        if ext in exts:
+            return category
+    return None
 
 
 # The CLI's root listing ("/") only shows Proton's virtual top-level
@@ -161,6 +186,64 @@ _TABLE_BASE_STYLE = """
 _TABLE_DRAG_OVER_STYLE = _TABLE_BASE_STYLE + (
     "QTableWidget { border: 2px dashed palette(highlight); }"
 )
+
+# Applied at the QApplication level (see app.py) so every popup menu and
+# dialog matches the rest of the app instead of looking like bare default
+# Qt widgets dropped in from nowhere.
+APP_STYLESHEET = """
+    QMenu {
+        background: palette(base);
+        border: 1px solid palette(mid);
+        border-radius: 8px;
+        padding: 4px;
+    }
+    QMenu::item {
+        padding: 6px 24px 6px 10px;
+        border-radius: 5px;
+        margin: 1px;
+    }
+    QMenu::item:selected {
+        background: palette(highlight);
+        color: palette(highlighted-text);
+    }
+    QMenu::separator {
+        height: 1px;
+        background: palette(mid);
+        margin: 4px 8px;
+    }
+
+    QMessageBox, QInputDialog, QProgressDialog {
+        background: palette(window);
+    }
+    QMessageBox QPushButton, QInputDialog QPushButton, QProgressDialog QPushButton {
+        padding: 6px 18px;
+        border-radius: 6px;
+        background: palette(button);
+        min-width: 60px;
+    }
+    QMessageBox QPushButton:hover, QInputDialog QPushButton:hover,
+    QProgressDialog QPushButton:hover {
+        background: palette(midlight);
+    }
+    QMessageBox QPushButton:default {
+        background: palette(highlight);
+        color: palette(highlighted-text);
+    }
+    QInputDialog QLineEdit {
+        border: 1px solid palette(mid);
+        border-radius: 5px;
+        padding: 4px 6px;
+    }
+    QProgressDialog QProgressBar {
+        border: 1px solid palette(mid);
+        border-radius: 5px;
+        text-align: center;
+    }
+    QProgressDialog QProgressBar::chunk {
+        background: palette(highlight);
+        border-radius: 4px;
+    }
+"""
 
 
 class MainWindow(QMainWindow):
@@ -269,6 +352,17 @@ class MainWindow(QMainWindow):
         color = color or self.palette().color(QPalette.WindowText)
         return make_icon(DRAWERS[name], color, size)
 
+    def _stateful_icon(
+        self,
+        name: str,
+        size: int = 20,
+        normal_color: QColor | None = None,
+        checked_color: QColor | None = None,
+        disabled_color: QColor | None = None,
+    ) -> QIcon:
+        normal_color = normal_color or self.palette().color(QPalette.WindowText)
+        return make_stateful_icon(DRAWERS[name], size, normal_color, checked_color, disabled_color)
+
     # -- setup ---------------------------------------------------------------
 
     def _sidebar_button(self, action: QAction, object_name: str | None = None) -> QToolButton:
@@ -320,14 +414,27 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(3)
         self._sidebar = sidebar
 
-        self.new_folder_action = QAction(self._icon("new_folder", color=QColor("#ffffff")), "New folder", self)
+        self.new_folder_action = QAction(
+            self._stateful_icon(
+                "new_folder",
+                normal_color=QColor("#ffffff"),
+                disabled_color=self.palette().color(QPalette.Disabled, QPalette.WindowText),
+            ),
+            "New folder",
+            self,
+        )
         self.new_folder_action.triggered.connect(self.create_folder)
         sidebar_layout.addWidget(self._sidebar_button(self.new_folder_action, "newFolderButton"))
         sidebar_layout.addSpacing(10)
 
+        highlighted_text = self.palette().color(QPalette.HighlightedText)
         self.root_actions: dict[str, QAction] = {}
         for root in (MY_FILES_ROOT, PHOTOS_ROOT, TRASH_ROOT):
-            action = QAction(self._icon(ROOT_ICONS[root]), ROOT_LABELS[root], self)
+            action = QAction(
+                self._stateful_icon(ROOT_ICONS[root], checked_color=highlighted_text),
+                ROOT_LABELS[root],
+                self,
+            )
             action.setCheckable(True)
             action.triggered.connect(lambda _checked=False, r=root: self.switch_root(r))
             sidebar_layout.addWidget(self._sidebar_button(action))
@@ -339,7 +446,11 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(divider)
 
         for root in (SHARED_BY_ME_ROOT, SHARED_WITH_ME_ROOT):
-            action = QAction(self._icon(ROOT_ICONS[root]), ROOT_LABELS[root], self)
+            action = QAction(
+                self._stateful_icon(ROOT_ICONS[root], checked_color=highlighted_text),
+                ROOT_LABELS[root],
+                self,
+            )
             action.setCheckable(True)
             action.triggered.connect(lambda _checked=False, r=root: self.switch_root(r))
             sidebar_layout.addWidget(self._sidebar_button(action))
@@ -368,16 +479,28 @@ class MainWindow(QMainWindow):
         file_color = QColor("#8a8f98")
         photo_color = QColor("#4f9ce8")
         video_color = QColor("#e0654f")
+        spreadsheet_color = QColor("#3fa86e")
+        archive_color = QColor("#b08650")
+        audio_color = QColor("#9b6fe0")
 
-        self._row_folder_icon = self._icon("folder", size=20, color=folder_color)
-        self._row_file_icon = self._icon("file", size=20, color=file_color)
-        self._row_photo_icon = self._icon("photos", size=20, color=photo_color)
-        self._row_video_icon = self._icon("video", size=20, color=video_color)
-
-        self._grid_folder_icon = self._icon("folder", size=48, color=folder_color)
-        self._grid_file_icon = self._icon("file", size=48, color=file_color)
-        self._grid_photo_icon = self._icon("photos", size=48, color=photo_color)
-        self._grid_video_icon = self._icon("video", size=48, color=video_color)
+        self._row_icons = {
+            "folder": self._icon("folder", size=20, color=folder_color),
+            "file": self._icon("file", size=20, color=file_color),
+            "photo": self._icon("photos", size=20, color=photo_color),
+            "video": self._icon("video", size=20, color=video_color),
+            "spreadsheet": self._icon("spreadsheet", size=20, color=spreadsheet_color),
+            "archive": self._icon("archive", size=20, color=archive_color),
+            "audio": self._icon("audio", size=20, color=audio_color),
+        }
+        self._grid_icons = {
+            "folder": self._icon("folder", size=48, color=folder_color),
+            "file": self._icon("file", size=48, color=file_color),
+            "photo": self._icon("photos", size=48, color=photo_color),
+            "video": self._icon("video", size=48, color=video_color),
+            "spreadsheet": self._icon("spreadsheet", size=48, color=spreadsheet_color),
+            "archive": self._icon("archive", size=48, color=archive_color),
+            "audio": self._icon("audio", size=48, color=audio_color),
+        }
 
         # -- content area: breadcrumb/path row + the file list itself --
         content = QWidget()
@@ -804,19 +927,21 @@ class MainWindow(QMainWindow):
             # Media type is present on regular filesystem entries too (not
             # just Photos) — apply the same folder/photo/video/file color
             # coding everywhere instead of only inside the Photos section,
-            # so a .jpg in My files looks the same as one in Photos.
+            # so a .jpg in My files looks the same as one in Photos. For
+            # types the CLI doesn't classify via mediaType (spreadsheets,
+            # archives, audio), fall back to guessing from the extension.
             media_type = item.raw.get("mediaType", "")
-            is_video = media_type.startswith("video/")
-            is_image = media_type.startswith("image/")
-
             if item.is_folder:
-                table_icon, grid_icon = self._row_folder_icon, self._grid_folder_icon
-            elif is_video:
-                table_icon, grid_icon = self._row_video_icon, self._grid_video_icon
-            elif is_image:
-                table_icon, grid_icon = self._row_photo_icon, self._grid_photo_icon
+                icon_key = "folder"
+            elif media_type.startswith("video/"):
+                icon_key = "video"
+            elif media_type.startswith("image/"):
+                icon_key = "photo"
             else:
-                table_icon, grid_icon = self._row_file_icon, self._grid_file_icon
+                icon_key = guess_file_category(item.name) or "file"
+
+            table_icon = self._row_icons[icon_key]
+            grid_icon = self._grid_icons[icon_key]
 
             name_item = QTableWidgetItem(item.name)
             name_item.setIcon(table_icon)

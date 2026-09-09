@@ -39,18 +39,25 @@ Early / minimal. Currently supports:
   pinned to the bottom
 - List view and grid/tile view, switchable from the top-right of the breadcrumb
   row. Both use the same color-coded icons everywhere (amber folders, blue
-  photos, red videos, grey generic files — a .jpg looks the same whether
-  you're in My files or Photos) and filenames elided to keep the extension
-  visible. List view drops the old spreadsheet look (row numbers, hard grid
-  lines) for a plain modern row list with alternating rows; grid view uses a
-  real fixed grid instead of the earlier ragged flow layout.
+  photos, red videos, green spreadsheets, tan archives, purple audio, grey
+  everything else — a .jpg looks the same whether you're in My files or
+  Photos, and file type is guessed from the extension when the CLI doesn't
+  classify it) and filenames elided to keep the extension visible. Icons also
+  adapt to button state — muted when disabled, recolored when a sidebar
+  section is the current one — instead of staying one fixed color regardless.
+  List view drops the old spreadsheet look (row numbers, hard grid lines) for
+  a plain modern row list with alternating rows; grid view uses a real fixed
+  grid instead of the earlier ragged flow layout.
 - Photos shows real filenames, real file sizes, and a distinct icon for videos
   vs photos (`photo timeline -d` turned out far richer than the undetailed
   version) — no actual image thumbnails though, since the CLI has no
   lightweight thumbnail-fetch call, only full-file download
+- Context menus and dialogs (popups, message boxes, the progress bar) are
+  styled to match the rest of the app instead of looking like bare default
+  Qt widgets
 
 Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
-(invite/remove/set-url), multi-select bulk actions, packaging as an AppImage.
+(invite/remove/set-url), multi-select bulk actions.
 
 ## Requirements
 
@@ -127,6 +134,25 @@ This installs `~/.local/share/applications/protondrive-gui.desktop` pointing
 at your venv, so "Proton Drive GUI" shows up in your app launcher/dock like
 any other installed app.
 
+### AppImage
+
+Prefer a single portable file over a venv? Build one:
+
+```bash
+./build-appimage.sh
+```
+
+This freezes the GUI (Python + PySide6) with PyInstaller and packages it as
+`dist/ProtonDriveGUI-<arch>.AppImage`. It's self-contained for the GUI part,
+but — same as every other install method here — it still expects the
+official `proton-drive` CLI to already be on your `PATH` at runtime; the
+AppImage doesn't bundle that. Run `./install.sh` first (or install the CLI
+yourself), then just double-click or run the `.AppImage` file.
+
+Needs `python3`, `pip`, and `curl` (it downloads `appimagetool` from GitHub
+the first time). Built and tested successfully end-to-end while developing
+this feature. Flatpak and Snap are deliberately not offered.
+
 ## A note on the JSON schema
 
 The Proton Drive CLI supports a `--json` flag but Proton hasn't published one
@@ -185,6 +211,16 @@ and `--help` output, beyond what's already covered above:
 
 ## Roadmap
 
+- [x] ~~Packaging as an AppImage~~ — `./build-appimage.sh`. Flatpak and Snap
+      are intentionally not offered.
+- [ ] Folder size / account storage quota — re-checked against Proton's
+      latest docs (Sep 2026): still no such command, and their own docs
+      now explicitly describe the Account SDK piece (where quota would
+      live) as "incubating, not for public distribution". A folder's total
+      size isn't exposed either — getting one would mean walking
+      `filesystem list` recursively ourselves and summing, which could be
+      slow on large trees. Not implemented automatically; open to adding
+      as an opt-in "Calculate size" action if wanted.
 - [ ] Local folder sync — the CLI has no watch/sync mode at all, only manual
       upload/download; any "sync" here would be built on top (watch a local
       folder, auto-upload on change; optionally poll the remote folder too
