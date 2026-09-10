@@ -14,7 +14,8 @@ A minimal desktop GUI wrapper around the official [Proton Drive CLI](https://pro
 
 ## Status
 
-Early / minimal. Currently supports:
+Actively developed, covers most everyday file-management workflows. Currently
+supports:
 
 - Browsing folders (double-click to open, "Back" to go back — disabled at the root)
 - Uploading files into the current folder — via the toolbar button or by
