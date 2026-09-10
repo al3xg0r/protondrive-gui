@@ -91,6 +91,16 @@ _EXTENSION_CATEGORIES = {
     "audio": {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus"},
 }
 
+# Documents/sheets created natively inside Proton Drive (its own in-app
+# editors, like Google Docs/Sheets) have no filename extension at all to
+# guess from — but do carry a distinctive mediaType. Only the sheet one is
+# confirmed against a real API response so far; the doc one is a guess by
+# naming convention and may need correcting.
+_PROTON_NATIVE_MEDIA_TYPES = {
+    "application/vnd.proton.sheet": "spreadsheet",
+    "application/vnd.proton.doc": "file",
+}
+
 
 def guess_file_category(name: str) -> str | None:
     """Returns an icon-set key ("spreadsheet"/"archive"/"audio") or None
@@ -788,28 +798,61 @@ class MainWindow(QMainWindow):
         self._open_context_menu(row, self.grid.viewport().mapToGlobal(pos))
 
     def _open_context_menu(self, row: int, global_pos):
-        if self.current_root in CONTEXT_MENU_UNSUPPORTED_ROOTS:
-            return  # rename/delete/restore semantics unconfirmed here — skip rather than guess
-
         menu = QMenu(self)
+        restore_action = delete_permanent_action = None
+        rename_action = trash_action = None
 
         if self.current_root == TRASH_ROOT:
             restore_action = menu.addAction(self._icon("refresh", size=16), "Restore")
-            delete_action = menu.addAction(self._icon("delete", size=16), "Delete Permanently\u2026")
-            chosen = menu.exec(global_pos)
-            if chosen == restore_action:
-                self._restore_selected()
-            elif chosen == delete_action:
-                self._permanently_delete_selected()
-            return
+            delete_permanent_action = menu.addAction(
+                self._icon("delete", size=16), "Delete Permanently\u2026"
+            )
+        elif self.current_root not in CONTEXT_MENU_UNSUPPORTED_ROOTS:
+            # rename/delete semantics are unconfirmed for Photos/Shared —
+            # skip those two rather than guess, but Properties is just a
+            # read-only look at data we already have, safe everywhere.
+            rename_action = menu.addAction(self._icon("rename", size=16), "Rename\u2026")
+            trash_action = menu.addAction(self._icon("delete", size=16), "Move to Trash\u2026")
 
-        rename_action = menu.addAction(self._icon("rename", size=16), "Rename\u2026")
-        delete_action = menu.addAction(self._icon("delete", size=16), "Move to Trash\u2026")
+        if not menu.isEmpty():
+            menu.addSeparator()
+        properties_action = menu.addAction(self._icon("about", size=16), "Properties\u2026")
+
         chosen = menu.exec(global_pos)
-        if chosen == rename_action:
+        if chosen is None:
+            return
+        if chosen == restore_action:
+            self._restore_selected()
+        elif chosen == delete_permanent_action:
+            self._permanently_delete_selected()
+        elif chosen == rename_action:
             self._rename_item(row)
-        elif chosen == delete_action:
+        elif chosen == trash_action:
             self._delete_selected()
+        elif chosen == properties_action:
+            self._show_properties(row)
+
+    def _show_properties(self, row: int):
+        item = self.items[row]
+        full_path = f"{self.current_path.rstrip('/')}/{item.name}"
+        media_type = item.raw.get("mediaType")
+        kind = "Folder" if item.is_folder else (media_type or "File")
+        size_text = "\u2014" if item.is_folder else (human_size(item.size) or "Unknown")
+        modified_text = format_timestamp(item.modified) or "Unknown"
+        shared_text = "Yes" if item.raw.get("isShared") else "No"
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Properties")
+        box.setTextFormat(Qt.RichText)
+        box.setText(
+            f"<b>{item.name}</b><br><br>"
+            f"<b>Type:</b> {kind}<br>"
+            f"<b>Size:</b> {size_text}<br>"
+            f"<b>Modified:</b> {modified_text}<br>"
+            f"<b>Shared:</b> {shared_text}<br>"
+            f"<b>Path:</b> {full_path}"
+        )
+        box.exec()
 
     def _rename_item(self, row: int):
         item = self.items[row]
@@ -927,9 +970,10 @@ class MainWindow(QMainWindow):
             # Media type is present on regular filesystem entries too (not
             # just Photos) — apply the same folder/photo/video/file color
             # coding everywhere instead of only inside the Photos section,
-            # so a .jpg in My files looks the same as one in Photos. For
-            # types the CLI doesn't classify via mediaType (spreadsheets,
-            # archives, audio), fall back to guessing from the extension.
+            # so a .jpg in My files looks the same as one in Photos. Docs
+            # created natively in Proton Drive (no filename extension at
+            # all) are caught via their distinctive mediaType instead;
+            # everything else falls back to guessing from the extension.
             media_type = item.raw.get("mediaType", "")
             if item.is_folder:
                 icon_key = "folder"
@@ -937,6 +981,8 @@ class MainWindow(QMainWindow):
                 icon_key = "video"
             elif media_type.startswith("image/"):
                 icon_key = "photo"
+            elif media_type in _PROTON_NATIVE_MEDIA_TYPES:
+                icon_key = _PROTON_NATIVE_MEDIA_TYPES[media_type]
             else:
                 icon_key = guess_file_category(item.name) or "file"
 

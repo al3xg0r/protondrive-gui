@@ -55,6 +55,9 @@ Early / minimal. Currently supports:
 - Context menus and dialogs (popups, message boxes, the progress bar) are
   styled to match the rest of the app instead of looking like bare default
   Qt widgets
+- Right-click → Properties… shows name, type, size, modified date, share
+  status, and full path — available everywhere, including Photos/Shared,
+  since it's read-only
 
 Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
 (invite/remove/set-url), multi-select bulk actions.
@@ -262,7 +265,6 @@ and `--help` output, beyond what's already covered above:
 - [ ] Sharing (`sharing invite`, list existing shares)
 - [ ] Search
 - [ ] Remember last-visited folder / window state
-- [ ] Packaging (AppImage / Flatpak)
 - [ ] Dark/light theme following system settings
 - [ ] Show logged-in account + storage quota (not currently possible — `proton-drive --help` exposes no account/whoami/quota command, only `auth login` / `auth logout`)
 - [x] ~~One-shot installer~~ — `./install.sh` fetches the CLI (with checksum
