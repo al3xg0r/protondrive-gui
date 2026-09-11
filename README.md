@@ -157,6 +157,15 @@ Needs `python3`, `pip`, and `curl` (it downloads `appimagetool` from GitHub
 the first time). Built and tested successfully end-to-end while developing
 this feature. Flatpak and Snap are deliberately not offered.
 
+Prebuilt AppImages (`linux/x64` and `linux/arm64`) are attached automatically
+to each GitHub Release from `v1.0.1` onward via
+[`.github/workflows/build-appimage.yml`](.github/workflows/build-appimage.yml) —
+grab one from the [Releases page](../../releases) instead of building it
+yourself if you just want to run the app. `x64-baseline` and `musl` variants
+(unlike the official CLI, which ships all of these) aren't produced: the
+"baseline" distinction is specific to the CLI's own compiled binary, and
+PySide6 has no prebuilt musl wheels to build against.
+
 ## A note on the JSON schema
 
 The Proton Drive CLI supports a `--json` flag but Proton hasn't published one

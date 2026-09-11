@@ -1,0 +1,51 @@
+name: Build AppImage
+
+# Runs on every version tag push (v1.0.0, v1.0.1, ...) and attaches the
+# built AppImages to that tag's GitHub Release as downloadable assets.
+#
+# Only linux/x64 and linux/arm64 are built:
+#   - x64-baseline doesn't apply here — that distinction is about the CPU
+#     instructions Proton's own CLI binary (compiled via Bun) needs; the
+#     PySide6 wheels this GUI uses are already built for broad
+#     compatibility, so there's no separate "baseline" build to make.
+#   - musl (Alpine) is left out — PySide6 has no prebuilt musl wheels on
+#     PyPI, and building Qt/PySide6 from source in CI is heavy and not
+#     guaranteed to succeed. Revisit if that changes.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          # GitHub-hosted arm64 runner label; check
+          # https://docs.github.com/actions/using-github-hosted-runners/about-github-hosted-runners
+          # if this stops being available for your plan/repo and swap it out.
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv libxcb-cursor0
+
+      - name: Build the AppImage
+        run: ./build-appimage.sh
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ProtonDriveGUI-*.AppImage
