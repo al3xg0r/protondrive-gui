@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThreadPool
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
+from . import theme
 from .icons import DRAWERS, make_icon, make_stateful_icon
 from .workers import Worker
 
@@ -291,6 +293,13 @@ class MainWindow(QMainWindow):
         self.items: list[DriveItem] = []
         self.is_logged_in = False
 
+        self._settings = QSettings(
+            QSettings.IniFormat, QSettings.UserScope, "protondrive-gui", "ProtonDriveGUI"
+        )
+        saved_theme = self._settings.value("theme", theme.LIGHT)
+        self.current_theme = saved_theme if saved_theme in (theme.LIGHT, theme.DARK) else theme.LIGHT
+        self._apply_theme(self.current_theme, persist=False)
+
         self._build_ui()
         self._init_cli()
 
@@ -372,6 +381,38 @@ class MainWindow(QMainWindow):
     ) -> QIcon:
         normal_color = normal_color or self.palette().color(QPalette.WindowText)
         return make_stateful_icon(DRAWERS[name], size, normal_color, checked_color, disabled_color)
+
+    # -- theme ------------------------------------------------------------
+
+    def _apply_theme(self, mode: str, persist: bool):
+        app = QApplication.instance()
+        app.setStyle("Fusion")
+        app.setPalette(theme.palette_for(mode))
+        app.setStyleSheet(APP_STYLESHEET)
+        if persist:
+            self._settings.setValue("theme", mode)
+
+    def toggle_theme(self):
+        self.current_theme = theme.DARK if self.current_theme == theme.LIGHT else theme.LIGHT
+        self._apply_theme(self.current_theme, persist=True)
+        self._rebuild_ui_preserving_state()
+
+    def _rebuild_ui_preserving_state(self):
+        # Icons bake in a color at creation time rather than recomputing
+        # it live, so a theme switch needs everything that reads
+        # self.palette() rebuilt — simplest correct way to do that is to
+        # just rebuild the whole UI and restore where we were, rather than
+        # hunting down and refreshing every palette-derived icon by hand.
+        saved_root = self.current_root
+        saved_path = self.current_path
+        self.removeToolBar(self._toolbar)
+        self._sidebar_buttons = []
+        self._build_ui()
+        self._apply_root_ui_state(saved_root)
+        self._set_auth_ui(self.is_logged_in)
+        self.back_action.setEnabled(saved_path != saved_root)
+        self._update_breadcrumbs()
+        self.refresh()
 
     # -- setup ---------------------------------------------------------------
 
@@ -467,6 +508,11 @@ class MainWindow(QMainWindow):
             self.root_actions[root] = action
 
         sidebar_layout.addStretch(1)
+
+        theme_label = "Light theme" if self.current_theme == theme.DARK else "Dark theme"
+        self.theme_action = QAction(self._icon("theme"), theme_label, self)
+        self.theme_action.triggered.connect(self.toggle_theme)
+        sidebar_layout.addWidget(self._sidebar_button(self.theme_action))
 
         self._login_icon = self._icon("login")
         self._logout_icon = self._icon("logout")
@@ -706,14 +752,17 @@ class MainWindow(QMainWindow):
             return self.current_root
         return self.current_root + display_path
 
-    def switch_root(self, root: str):
-        self.current_root = root
+    def _apply_root_ui_state(self, root: str):
         self.goto_path_button.setEnabled(root != PHOTOS_ROOT)
         self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
         self.upload_action.setEnabled(root not in (TRASH_ROOT, SHARED_WITH_ME_ROOT))
         self.empty_trash_action.setVisible(root == TRASH_ROOT)
         for r, action in self.root_actions.items():
             action.setChecked(r == root)
+
+    def switch_root(self, root: str):
+        self.current_root = root
+        self._apply_root_ui_state(root)
         self.navigate_to(root)
 
     def _prompt_goto_path(self):

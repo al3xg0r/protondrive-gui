@@ -292,6 +292,18 @@ def draw_grid_view(p: QPainter, s: int):
             p.drawRect(QRectF(x, y, cell, cell))
 
 
+def draw_theme(p: QPainter, s: int):
+    cx, cy, r = s * 0.5, s * 0.5, s * 0.32
+    p.drawEllipse(QRectF(cx - r, cy - r, 2 * r, 2 * r))
+    path = QPainterPath()
+    path.moveTo(cx, cy - r)
+    path.arcTo(cx - r, cy - r, 2 * r, 2 * r, 90, -180)
+    path.closeSubpath()
+    p.setBrush(p.pen().color())
+    p.drawPath(path)
+    p.setBrush(Qt.NoBrush)
+
+
 DRAWERS = {
     "back": draw_back,
     "refresh": draw_refresh,
@@ -310,6 +322,7 @@ DRAWERS = {
     "shared": draw_shared,
     "list_view": draw_list_view,
     "grid_view": draw_grid_view,
+    "theme": draw_theme,
     "spreadsheet": draw_spreadsheet,
     "archive": draw_archive,
     "audio": draw_audio,

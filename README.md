@@ -59,6 +59,8 @@ supports:
 - Right-click → Properties… shows name, type, size, modified date, share
   status, and full path — available everywhere, including Photos/Shared,
   since it's read-only
+- Light/dark theme toggle (bottom of the sidebar) — choice is remembered
+  between launches
 
 Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
 (invite/remove/set-url), multi-select bulk actions.
@@ -275,7 +277,9 @@ and `--help` output, beyond what's already covered above:
 - [ ] Sharing (`sharing invite`, list existing shares)
 - [ ] Search
 - [ ] Remember last-visited folder / window state
-- [ ] Dark/light theme following system settings
+- [x] ~~Dark/light theme~~ — manual toggle in the sidebar, remembered
+      between launches via QSettings (not tied to the system theme
+      automatically — no "follow system" mode yet)
 - [ ] Show logged-in account + storage quota (not currently possible — `proton-drive --help` exposes no account/whoami/quota command, only `auth login` / `auth logout`)
 - [x] ~~One-shot installer~~ — `./install.sh` fetches the CLI (with checksum
       verification), installs system deps, sets up the venv, and installs
