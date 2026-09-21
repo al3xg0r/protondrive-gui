@@ -293,15 +293,20 @@ need changes in one of the two.
 
 ## License
 
-MIT, with one addition: forks and redistributions must keep a visible link
-back to this repository (private, non-redistributed use doesn't need it).
-See [LICENSE](LICENSE) for the exact wording.
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) —
+free to use, modify, and share for any noncommercial purpose (personal use,
+hobby projects, education, nonprofits, etc.), but not for commercial use or
+resale. It also requires anyone redistributing the software to keep the
+copyright/attribution notice pointing back to this repository. See
+[LICENSE](LICENSE) for the exact terms.
 
-Note: this isn't a standard OSI-approved license anymore once that clause is
-added, so GitHub's license detector may show it as "Other" rather than
-"MIT" — the terms are otherwise identical to MIT. This isn't legal advice;
-if attribution enforcement matters a lot to you, it's worth a quick look by
-someone qualified.
+Note: this isn't an OSI-approved open-source license (OSI's definition
+requires allowing commercial use, which this deliberately doesn't), so
+GitHub may label the repo "Other" rather than a familiar license name — this
+was a deliberate choice to keep the project from being resold or bundled
+into a paid product, not an accident. This isn't legal advice; if this
+matters a lot for your situation, it's worth a quick look by someone
+qualified.
 
 ---
 
