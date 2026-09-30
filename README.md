@@ -71,6 +71,15 @@ Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
 - Python 3.10+
 - The official [Proton Drive CLI](https://proton.me/drive/download), installed and on your `PATH` as `proton-drive`
 
+## Download
+
+Grab `ProtonDriveGUI-x86_64.AppImage` from the [latest release](https://github.com/al3xg0r/protondrive-gui/releases/latest), make it executable and run it:
+
+    chmod +x ProtonDriveGUI-x86_64.AppImage
+    ./ProtonDriveGUI-x86_64.AppImage
+
+The official `proton-drive` CLI must be installed and on your `PATH`.
+
 ## Setup
 
 ### Quick start (recommended)
@@ -226,8 +235,7 @@ and `--help` output, beyond what's already covered above:
 
 ## Roadmap
 
-- [x] ~~Packaging as an AppImage~~ — `./build-appimage.sh`. Flatpak and Snap
-      are intentionally not offered.
+- [x] ~~Packaging as an AppImage~~ — `./build-appimage.sh`.
 - [ ] Folder size / account storage quota — re-checked against Proton's
       latest docs (Sep 2026): still no such command, and their own docs
       now explicitly describe the Account SDK piece (where quota would
