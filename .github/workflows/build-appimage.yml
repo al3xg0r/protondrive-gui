@@ -55,7 +55,7 @@ jobs:
             libxkbcommon-x11-0
 
       - name: Build the AppImage
-        run: ./build-appimage.sh
+        run: bash ./build-appimage.sh
 
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
