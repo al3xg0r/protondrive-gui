@@ -11,7 +11,10 @@ set -euo pipefail
 #
 # Output: dist/ProtonDriveGUI-<arch>.AppImage
 #
-# Requirements: python3, pip, curl. Only tested on x86_64/aarch64 Linux.
+# Requirements: python3, pip, curl, and the Qt xcb helper libraries
+# (libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+#  libxcb-render-util0 libxcb-shape0 libxcb-xkb1 libxkbcommon-x11-0),
+# which are copied into the AppImage. Only tested on x86_64/aarch64 Linux.
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build-appimage"
@@ -54,6 +57,37 @@ cp -r "$BUILD_DIR/dist/protondrive-gui/." "$APPDIR/usr/bin/"
 cp "$PROJECT_DIR/assets/icon.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/protondrive-gui.svg"
 cp "$APPDIR/usr/share/icons/hicolor/scalable/apps/protondrive-gui.svg" "$APPDIR/protondrive-gui.svg"
 
+# The Qt "xcb" platform plugin needs these helper libraries. Minimal systems
+# (and the AppImage catalog's test environment) don't ship them, so without
+# bundling the app can't open a window there. Core graphics libraries
+# (libGL, libEGL, libxcb, libwayland-*, libdrm) are deliberately NOT bundled:
+# they should come from the host to match its graphics driver.
+say "Bundling Qt xcb helper libraries"
+if [ -d "$APPDIR/usr/bin/_internal" ]; then
+    LIBDIR="$APPDIR/usr/bin/_internal"   # PyInstaller >= 6
+else
+    LIBDIR="$APPDIR/usr/bin"             # PyInstaller < 6
+fi
+XCB_LIBS=(
+    libxcb-cursor.so.0
+    libxcb-icccm.so.4
+    libxcb-image.so.0
+    libxcb-keysyms.so.1
+    libxcb-render-util.so.0
+    libxcb-shape.so.0
+    libxcb-xkb.so.1
+    libxkbcommon-x11.so.0
+)
+LDCONFIG="$(command -v ldconfig || echo /sbin/ldconfig)"
+for lib in "${XCB_LIBS[@]}"; do
+    src="$("$LDCONFIG" -p | awk -v l="$lib" '$1 == l && /x86-64|AArch64/ { print $NF; exit }')"
+    if [ -z "$src" ]; then
+        echo "error: $lib not found on the build machine (install its package first)" >&2
+        exit 1
+    fi
+    cp -L "$src" "$LIBDIR/"
+done
+
 cat > "$APPDIR/usr/share/applications/protondrive-gui.desktop" << 'EOF'
 [Desktop Entry]
 Type=Application
@@ -69,7 +103,7 @@ cp "$APPDIR/usr/share/applications/protondrive-gui.desktop" "$APPDIR/protondrive
 cat > "$APPDIR/AppRun" << 'EOF'
 #!/usr/bin/env bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-export LD_LIBRARY_PATH="$HERE/usr/bin:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$HERE/usr/bin:$HERE/usr/bin/_internal:${LD_LIBRARY_PATH:-}"
 exec "$HERE/usr/bin/protondrive-gui" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"

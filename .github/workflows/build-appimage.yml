@@ -37,10 +37,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The libxcb-* / libxkbcommon-x11 packages are the helper libraries the
+      # Qt "xcb" platform plugin needs. build-appimage.sh copies them into the
+      # AppImage, so the app also starts on minimal systems that lack them.
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-venv libxcb-cursor0
+          sudo apt-get install -y \
+            python3-venv \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xkb1 \
+            libxkbcommon-x11-0
 
       - name: Build the AppImage
         run: ./build-appimage.sh
