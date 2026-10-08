@@ -162,6 +162,11 @@ _SIDEBAR_STYLESHEET = """
     }
     QToolButton#newFolderButton:hover { background: #24b563; }
     QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
+    QLabel#accountLabel {
+        color: palette(dark);
+        font-size: 11px;
+        padding: 2px 8px 6px 8px;
+    }
 """
 
 _GRID_BASE_STYLE = """
@@ -264,7 +269,6 @@ class MainWindow(QMainWindow):
         from . import __version__
 
         self.setWindowTitle(f"Proton Drive GUI (unofficial) \u2014 v{__version__}")
-        self.resize(1080, 640)
         self.setAcceptDrops(True)
         # A floor narrow enough to still be usable, but wide enough that
         # even icon-only mode (see resizeEvent) never has to hide a
@@ -288,10 +292,9 @@ class MainWindow(QMainWindow):
         self._sidebar_buttons: list[QToolButton] = []
 
         self.cli: ProtonDriveCLI | None = None
-        self.current_root = MY_FILES_ROOT
-        self.current_path = MY_FILES_ROOT
         self.items: list[DriveItem] = []
         self.is_logged_in = False
+        self.account_email: str | None = None
 
         self._settings = QSettings(
             QSettings.IniFormat, QSettings.UserScope, "protondrive-gui", "ProtonDriveGUI"
@@ -300,8 +303,32 @@ class MainWindow(QMainWindow):
         self.current_theme = saved_theme if saved_theme in (theme.LIGHT, theme.DARK) else theme.LIGHT
         self._apply_theme(self.current_theme, persist=False)
 
+        # Remember where the user last was, so relaunching doesn't always
+        # dump them back at My files root.
+        saved_root = self._settings.value("last_root", MY_FILES_ROOT)
+        self.current_root = saved_root if saved_root in ROOT_LABELS else MY_FILES_ROOT
+        saved_path = self._settings.value("last_path", self.current_root)
+        if isinstance(saved_path, str) and saved_path.startswith(self.current_root):
+            self.current_path = saved_path
+        else:
+            self.current_path = self.current_root
+
         self._build_ui()
+        self._apply_root_ui_state(self.current_root)
+        self.back_action.setEnabled(self.current_path != self.current_root)
+        self._update_breadcrumbs()
+
+        saved_geometry = self._settings.value("window/geometry")
+        if saved_geometry is not None:
+            self.restoreGeometry(saved_geometry)
+        else:
+            self.resize(1080, 640)
+
         self._init_cli()
+
+    def closeEvent(self, event):
+        self._settings.setValue("window/geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     # -- worker helper -------------------------------------------------------
 
@@ -520,11 +547,16 @@ class MainWindow(QMainWindow):
         self.login_action.triggered.connect(self.toggle_auth)
         sidebar_layout.addWidget(self._sidebar_button(self.login_action))
 
+        self.account_label = QLabel(self._format_account_label())
+        self.account_label.setObjectName("accountLabel")
+        self.account_label.setWordWrap(True)
+        sidebar_layout.addWidget(self.account_label)
+
         self.about_action = QAction(self._icon("about"), "About", self)
         self.about_action.triggered.connect(self.show_about)
         sidebar_layout.addWidget(self._sidebar_button(self.about_action))
 
-        self.root_actions[MY_FILES_ROOT].setChecked(True)
+        self.root_actions[self.current_root].setChecked(True)
 
         # Same color coding used everywhere an item shows up — list rows
         # and grid tiles alike — so a photo looks like a photo whether
@@ -708,6 +740,7 @@ class MainWindow(QMainWindow):
         new_width = self._SIDEBAR_WIDE if sidebar_wide else self._SIDEBAR_NARROW
         if self._sidebar.minimumWidth() != new_width:
             self._sidebar.setFixedWidth(new_width)
+        self.account_label.setVisible(sidebar_wide)
 
         top_style = (
             Qt.ToolButtonIconOnly
@@ -777,6 +810,8 @@ class MainWindow(QMainWindow):
         self.current_path = path if path.startswith("/") else f"/{path}"
         self.back_action.setEnabled(self.current_path != self.current_root)
         self._update_breadcrumbs()
+        self._settings.setValue("last_root", self.current_root)
+        self._settings.setValue("last_path", self.current_path)
         self.refresh()
 
     def _update_breadcrumbs(self):
@@ -1007,6 +1042,9 @@ class MainWindow(QMainWindow):
             )
 
     def _on_list_loaded(self, items: list[DriveItem]):
+        if self.account_email is None:
+            self._maybe_capture_account_email(items)
+
         if self.current_root == PHOTOS_ROOT:
             # Flat, most-recent-first — there's no folder hierarchy here.
             self.items = sorted(items, key=lambda i: i.modified or "", reverse=True)
@@ -1058,6 +1096,17 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(f"{len(self.items)} file(s)", 3000)
 
+    def _maybe_capture_account_email(self, items: list[DriveItem]):
+        for item in items:
+            email = (item.raw.get("ownedBy") or {}).get("email")
+            if email:
+                self.account_email = email
+                self.account_label.setText(self._format_account_label())
+                break
+
+    def _format_account_label(self) -> str:
+        return f"Logged in as\n{self.account_email}" if self.account_email else ""
+
     def _on_error(self, message: str):
         self.statusBar().showMessage("Error", 3000)
         QMessageBox.warning(self, "Proton Drive error", message)
@@ -1085,6 +1134,8 @@ class MainWindow(QMainWindow):
         else:
             self.table.setRowCount(0)
             self.grid.clear()
+            self.account_email = None
+            self.account_label.setText(self._format_account_label())
             self.statusBar().showMessage('Not logged in — click "Log in…" to continue.', 6000)
 
     def _set_auth_ui(self, logged_in: bool):
