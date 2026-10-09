@@ -1,4 +1,4 @@
-# Proton Drive GUI (unofficial)
+# Proton Drive GUI
 
 A minimal desktop GUI wrapper around the official [Proton Drive CLI](https://proton.me/support/drive-cli).
 

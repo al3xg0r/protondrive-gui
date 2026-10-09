@@ -1,4 +1,4 @@
-"""Main window for the (unofficial) Proton Drive GUI."""
+"""Main window for the Proton Drive GUI."""
 
 from __future__ import annotations
 
@@ -163,18 +163,19 @@ _SIDEBAR_STYLESHEET = """
     QToolButton#newFolderButton:hover { background: #24b563; }
     QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
     QLabel#accountLabel {
-        color: palette(dark);
+        color: palette(text);
         font-size: 11px;
-        padding: 2px 8px 6px 8px;
+        padding: 0 16px 0 4px;
     }
 """
 
 _GRID_BASE_STYLE = """
-    QListWidget { border: none; }
+    QListWidget { border: none; background: transparent; }
     QListWidget::item {
         border-radius: 10px;
-        padding: 6px;
+        padding: 8px 6px;
         background: palette(alternate-base);
+        text-align: center;
     }
     QListWidget::item:hover { background: palette(midlight); }
     QListWidget::item:selected {
@@ -268,7 +269,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         from . import __version__
 
-        self.setWindowTitle(f"Proton Drive GUI (unofficial) \u2014 v{__version__}")
+        self.setWindowTitle("Proton Drive GUI")
         self.setAcceptDrops(True)
         # A floor narrow enough to still be usable, but wide enough that
         # even icon-only mode (see resizeEvent) never has to hide a
@@ -432,11 +433,17 @@ class MainWindow(QMainWindow):
         # hunting down and refreshing every palette-derived icon by hand.
         saved_root = self.current_root
         saved_path = self.current_path
+        saved_grid = self.view_stack.currentWidget() is self.grid_panel
         self.removeToolBar(self._toolbar)
         self._sidebar_buttons = []
         self._build_ui()
         self._apply_root_ui_state(saved_root)
         self._set_auth_ui(self.is_logged_in)
+        # Keep the list/grid choice across a theme switch — the rebuild
+        # otherwise drops back to list view.
+        self._set_view_mode("grid" if saved_grid else "list")
+        self.list_view_action.setChecked(not saved_grid)
+        self.grid_view_action.setChecked(saved_grid)
         self.back_action.setEnabled(saved_path != saved_root)
         self._update_breadcrumbs()
         self.refresh()
@@ -483,6 +490,20 @@ class MainWindow(QMainWindow):
         self.empty_trash_action.triggered.connect(self.empty_trash)
         self.empty_trash_action.setVisible(False)  # only shown while browsing Trash
         toolbar.addAction(self.empty_trash_action)
+
+        # Spacer comes last among the left-side actions, so only the
+        # account label gets pushed to the far right edge.
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        toolbar.addWidget(spacer)
+
+        self.account_label = QLabel(self._format_account_label())
+        self.account_label.setObjectName("accountLabel")
+        self.account_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # Set directly on the label: the sidebar stylesheet doesn't reach
+        # widgets in the top toolbar.
+        self.account_label.setContentsMargins(0, 0, 16, 0)
+        toolbar.addWidget(self.account_label)
 
         # -- left sidebar: create, navigate, account --
         sidebar = QWidget()
@@ -546,11 +567,6 @@ class MainWindow(QMainWindow):
         self.login_action = QAction(self._login_icon, "Log in", self)
         self.login_action.triggered.connect(self.toggle_auth)
         sidebar_layout.addWidget(self._sidebar_button(self.login_action))
-
-        self.account_label = QLabel(self._format_account_label())
-        self.account_label.setObjectName("accountLabel")
-        self.account_label.setWordWrap(True)
-        sidebar_layout.addWidget(self.account_label)
 
         self.about_action = QAction(self._icon("about"), "About", self)
         self.about_action.triggered.connect(self.show_about)
@@ -675,7 +691,7 @@ class MainWindow(QMainWindow):
         # without it, Qt lays items out by natural per-item size (varies
         # with filename length), producing the ragged/uneven flow seen
         # in testing rather than clean aligned rows and columns.
-        self.grid.setGridSize(QSize(132, 128))
+        self.grid.setGridSize(QSize(132, 120))
         self.grid.setUniformItemSizes(True)
         self.grid.setWordWrap(True)
         self.grid.setSpacing(4)
@@ -687,7 +703,15 @@ class MainWindow(QMainWindow):
         self.grid.setContextMenuPolicy(Qt.CustomContextMenu)
         self.grid.customContextMenuRequested.connect(self._show_context_menu_grid)
         self.grid.installEventFilter(self)
-        self.view_stack.addWidget(self.grid)
+        self.grid.viewport().setAutoFillBackground(False)
+        self.grid_panel = QFrame()
+        self.grid_panel.setObjectName("gridPanel")
+        self.grid_panel.setStyleSheet("QFrame#gridPanel { background: palette(base); }")
+        grid_panel_layout = QVBoxLayout(self.grid_panel)
+        grid_panel_layout.setContentsMargins(12, 18, 12, 0)
+        grid_panel_layout.setSpacing(0)
+        grid_panel_layout.addWidget(self.grid)
+        self.view_stack.addWidget(self.grid_panel)
 
         content_layout.addWidget(self.view_stack)
 
@@ -715,10 +739,10 @@ class MainWindow(QMainWindow):
     # -- view mode (list / grid) --------------------------------------------------
 
     def _set_view_mode(self, mode: str):
-        self.view_stack.setCurrentWidget(self.grid if mode == "grid" else self.table)
+        self.view_stack.setCurrentWidget(self.grid_panel if mode == "grid" else self.table)
 
     def _selected_rows(self) -> list[int]:
-        if self.view_stack.currentWidget() is self.grid:
+        if self.view_stack.currentWidget() is self.grid_panel:
             return sorted({self.grid.row(it) for it in self.grid.selectedItems()})
         return sorted({idx.row() for idx in self.table.selectedIndexes()})
 
@@ -740,7 +764,6 @@ class MainWindow(QMainWindow):
         new_width = self._SIDEBAR_WIDE if sidebar_wide else self._SIDEBAR_NARROW
         if self._sidebar.minimumWidth() != new_width:
             self._sidebar.setFixedWidth(new_width)
-        self.account_label.setVisible(sidebar_wide)
 
         top_style = (
             Qt.ToolButtonIconOnly
@@ -1105,7 +1128,7 @@ class MainWindow(QMainWindow):
                 break
 
     def _format_account_label(self) -> str:
-        return f"Logged in as\n{self.account_email}" if self.account_email else ""
+        return self.account_email or ""
 
     def _on_error(self, message: str):
         self.statusBar().showMessage("Error", 3000)
@@ -1186,7 +1209,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("About Proton Drive GUI")
         box.setTextFormat(Qt.RichText)
         box.setText(
-            f"<b>Proton Drive GUI</b> v{__version__} (unofficial)<br><br>"
+            f"<b>Proton Drive GUI</b> v{__version__}<br><br>"
             "A free, open-source desktop client for the official Proton Drive CLI.<br><br>"
             '<a href="https://github.com/al3xg0r/protondrive-gui">Project on GitHub</a>'
         )
