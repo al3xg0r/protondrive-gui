@@ -1361,9 +1361,21 @@ class MainWindow(QMainWindow):
 
         dialog = self._make_progress_dialog(f"Downloading {len(rows)} file(s)\u2026")
 
-        def _done(_):
+        def _done(skipped):
             dialog.close()
-            self.statusBar().showMessage("Download complete", 3000)
+            skipped = skipped or []
+            if skipped:
+                listing = "\n".join(f"\u2022 {name}" for name in skipped)
+                QMessageBox.warning(
+                    self,
+                    "Some items were not downloaded",
+                    "Proton Drive's CLI can't download these items, so they were skipped:\n\n"
+                    f"{listing}\n\nProton's own documents and sheets (created inside "
+                    "Proton Drive) are not downloadable through the CLI.",
+                )
+                self.statusBar().showMessage(f"Skipped {len(skipped)} item(s)", 5000)
+            else:
+                self.statusBar().showMessage("Download complete", 3000)
 
         def _err(message):
             dialog.close()

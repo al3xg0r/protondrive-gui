@@ -264,7 +264,7 @@ class ProtonDriveCLI:
     _PROGRESS_RE = re.compile(r"(\d+(?:\.\d+)?)%\s+(.+?)\s+\(([\d.]+\s*[KMGT]?i?B)\)")
     _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
-    def _run_streaming(self, args: list[str], on_progress) -> None:
+    def _run_streaming(self, args: list[str], on_progress) -> str:
         cmd = [self.binary_path, *args]
         # A plain pipe isn't a real terminal, and progress-bar/spinner
         # libraries commonly check isatty() before drawing live updates —
@@ -286,6 +286,7 @@ class ProtonDriveCLI:
             slave_fd = -1  # already closed; don't close again in finally
 
             buffer = ""
+            captured: list[str] = []
             while True:
                 try:
                     chunk = os.read(master_fd, 1024)
@@ -295,7 +296,9 @@ class ProtonDriveCLI:
                     break
                 if not chunk:
                     break
-                buffer += chunk.decode("utf-8", errors="replace")
+                text = chunk.decode("utf-8", errors="replace")
+                captured.append(text)
+                buffer += text
                 # The CLI redraws its progress line with \r; treat both \r
                 # and \n as frame boundaries so we catch every update.
                 while True:
@@ -316,13 +319,46 @@ class ProtonDriveCLI:
             os.close(master_fd)
             proc.wait()
         if proc.returncode != 0:
-            raise ProtonDriveError(f"'{' '.join(cmd)}' failed (exit {proc.returncode})")
+            tail = self._tail_of_output(captured)
+            detail = f"\n\n{tail}" if tail else ""
+            raise ProtonDriveError(
+                f"'{' '.join(cmd)}' failed (exit {proc.returncode}){detail}",
+                stdout="".join(captured),
+            )
+        return "".join(captured)
+
+    @classmethod
+    def _tail_of_output(cls, parts: list[str], max_lines: int = 12) -> str:
+        text = cls._ANSI_RE.sub("", "".join(parts)).replace("\r", "\n")
+        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+        return "\n".join(lines[-max_lines:])
 
     def upload_with_progress(self, local_paths: list[str], remote_dir: str, on_progress) -> None:
         self._run_streaming(["filesystem", "upload", *local_paths, remote_dir], on_progress)
 
-    def download_with_progress(self, remote_paths: list[str], local_dir: str, on_progress) -> None:
-        self._run_streaming(["filesystem", "download", *remote_paths, local_dir], on_progress)
+    def download_with_progress(self, remote_paths: list[str], local_dir: str, on_progress) -> list[str]:
+        """Returns the names of items the CLI skipped. It exits 0 for these,
+        so the only sign is the "Skipped:" section of its transfer summary —
+        e.g. Proton's own native sheets/docs, which it can't download."""
+        output = self._run_streaming(["filesystem", "download", *remote_paths, local_dir], on_progress)
+        return self._parse_skipped(output)
+
+    @staticmethod
+    def _parse_skipped(text: str) -> list[str]:
+        names: list[str] = []
+        in_skipped = False
+        for raw in ProtonDriveCLI._ANSI_RE.sub("", text).splitlines():
+            line = raw.strip()
+            if line.startswith("Skipped:"):
+                in_skipped = True
+                continue
+            if in_skipped:
+                if line.startswith("- "):
+                    body = line[2:]
+                    names.append(body.rsplit(" (", 1)[0] if " (" in body else body)
+                elif line:
+                    in_skipped = False
+        return names
 
     # -- photos ---------------------------------------------------------------
     #
