@@ -67,6 +67,13 @@ supports:
 - Light/dark theme toggle (bottom of the sidebar) — choice is remembered
 - Remembers the last section and folder you were in, plus window size and
   position, across launches
+- Folder sizes in the Size column are counted in the background (one folder at
+  a time) and remembered between launches. They're refreshed after an hour, or
+  immediately after any change made in the app
+- About shows the installed CLI version and whether a newer CLI is out. It also
+  checks GitHub for the latest release of this app and links to it. That is the
+  only network request the GUI makes outside the CLI, and it happens only when
+  you open About
 - Shows the signed-in account email at the right of the top toolbar (taken
   from the file listing, so no extra CLI call is needed)
   between launches

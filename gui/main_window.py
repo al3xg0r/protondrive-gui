@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
+import time
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThreadPool
@@ -35,7 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
-from . import theme
+from . import theme, updates
 from .folder_picker import FolderPickerDialog
 from .icons import DRAWERS, make_icon, make_stateful_icon
 from .workers import Worker
@@ -301,6 +303,10 @@ class MainWindow(QMainWindow):
         self._settings = QSettings(
             QSettings.IniFormat, QSettings.UserScope, "protondrive-gui", "ProtonDriveGUI"
         )
+        self._folder_sizes: dict[str, list] = self._load_folder_sizes()
+        self._size_queue: list[str] = []
+        self._size_busy = False
+        self._size_gen = 0
         saved_theme = self._settings.value("theme", theme.LIGHT)
         self.current_theme = saved_theme if saved_theme in (theme.LIGHT, theme.DARK) else theme.LIGHT
         self._apply_theme(self.current_theme, persist=False)
@@ -970,7 +976,7 @@ class MainWindow(QMainWindow):
                     QMessageBox.warning(self, "Move to folder", "A folder can't be moved into itself.")
                     return False
             self.statusBar().showMessage(f"Moving {len(sources)} item(s) \u2026")
-            self._start_worker(self.cli.move, sources, target, on_finished=lambda _: self.refresh())
+            self._start_worker(self.cli.move, sources, target, on_finished=lambda _: self._refresh_after_change())
             return True
 
         dialog = FolderPickerDialog(
@@ -1000,7 +1006,7 @@ class MainWindow(QMainWindow):
                 new_name = f"{p.stem} (copy){p.suffix}"
             pairs.append((f"{parent}/{item.name}", new_name))
         self.statusBar().showMessage(f"Copying {len(pairs)} item(s) \u2026")
-        self._start_worker(self.cli.copy_each, pairs, parent, on_finished=lambda _: self.refresh())
+        self._start_worker(self.cli.copy_each, pairs, parent, on_finished=lambda _: self._refresh_after_change())
 
     def _show_properties(self, row: int):
         item = self.items[row]
@@ -1010,11 +1016,15 @@ class MainWindow(QMainWindow):
             self._start_worker(
                 self.cli.folder_size,
                 full_path,
-                on_finished=lambda stats: self._open_information(item, full_path, stats),
+                on_finished=lambda stats: self._info_with_stats(item, full_path, stats),
                 on_error=lambda _msg: self._open_information(item, full_path, None),
             )
             return
         self._open_information(item, full_path, None)
+
+    def _info_with_stats(self, item: DriveItem, full_path: str, stats):
+        self._store_size(full_path, stats)
+        self._open_information(item, full_path, stats)
 
     def _open_information(self, item: DriveItem, full_path: str, stats):
         media_type = item.raw.get("mediaType")
@@ -1055,7 +1065,7 @@ class MainWindow(QMainWindow):
         full_path = f"{self.current_path.rstrip('/')}/{item.name}"
         self.statusBar().showMessage(f"Renaming to {new_name} \u2026")
         self._start_worker(
-            self.cli.rename, full_path, new_name, on_finished=lambda _: self.refresh()
+            self.cli.rename, full_path, new_name, on_finished=lambda _: self._refresh_after_change()
         )
 
     def _delete_selected(self):
@@ -1075,7 +1085,7 @@ class MainWindow(QMainWindow):
             return
         paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
         self.statusBar().showMessage(f"Moving {len(paths)} item(s) to Trash \u2026")
-        self._start_worker(self.cli.trash, paths, on_finished=lambda _: self.refresh())
+        self._start_worker(self.cli.trash, paths, on_finished=lambda _: self._refresh_after_change())
 
     def _restore_selected(self):
         rows = self._selected_rows()
@@ -1083,7 +1093,7 @@ class MainWindow(QMainWindow):
             return
         paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
         self.statusBar().showMessage(f"Restoring {len(paths)} item(s) \u2026")
-        self._start_worker(self.cli.restore, paths, on_finished=lambda _: self.refresh())
+        self._start_worker(self.cli.restore, paths, on_finished=lambda _: self._refresh_after_change())
 
     def _permanently_delete_selected(self):
         rows = self._selected_rows()
@@ -1102,7 +1112,7 @@ class MainWindow(QMainWindow):
             return
         paths = [f"{self.current_path.rstrip('/')}/{self.items[r].name}" for r in rows]
         self.statusBar().showMessage(f"Deleting {len(paths)} item(s) permanently \u2026")
-        self._start_worker(self.cli.delete, paths, on_finished=lambda _: self.refresh())
+        self._start_worker(self.cli.delete, paths, on_finished=lambda _: self._refresh_after_change())
 
     def empty_trash(self):
         if not self.cli:
@@ -1117,7 +1127,7 @@ class MainWindow(QMainWindow):
         if confirm != QMessageBox.Yes:
             return
         self.statusBar().showMessage("Emptying Trash \u2026")
-        self._start_worker(self.cli.empty_trash, on_finished=lambda _: self.refresh())
+        self._start_worker(self.cli.empty_trash, on_finished=lambda _: self._refresh_after_change())
 
     def create_folder(self):
         if not self.cli:
@@ -1133,7 +1143,7 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(f"Creating folder \u201c{name}\u201d \u2026")
         self._start_worker(
-            self.cli.create_folder, self.current_path, name, on_finished=lambda _: self.refresh()
+            self.cli.create_folder, self.current_path, name, on_finished=lambda _: self._refresh_after_change()
         )
 
     # -- data loading --------------------------------------------------------
@@ -1152,6 +1162,7 @@ class MainWindow(QMainWindow):
     def _on_list_loaded(self, items: list[DriveItem]):
         if self.account_email is None:
             self._maybe_capture_account_email(items)
+        self._queue_folder_sizes(items)
 
         if self.current_root == PHOTOS_ROOT:
             # Flat, most-recent-first — there's no folder hierarchy here.
@@ -1187,7 +1198,7 @@ class MainWindow(QMainWindow):
             name_item = QTableWidgetItem(item.name)
             name_item.setIcon(table_icon)
             self.table.setItem(row, 0, name_item)
-            size_text = "\u2014" if item.is_folder else human_size(item.size)
+            size_text = self._folder_size_text(item) if item.is_folder else human_size(item.size)
             size_item = QTableWidgetItem(size_text)
             if item.is_folder:
                 size_item.setTextAlignment(Qt.AlignCenter)
@@ -1214,6 +1225,90 @@ class MainWindow(QMainWindow):
 
     def _format_account_label(self) -> str:
         return self.account_email or ""
+
+    # -- folder size cache -----------------------------------------------------
+
+    _SIZE_TTL_SECONDS = 60 * 60  # re-count after an hour, or sooner after a change here
+
+    def _load_folder_sizes(self) -> dict:
+        try:
+            data = json.loads(self._settings.value("folder_sizes", "{}") or "{}")
+            return data if isinstance(data, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    def _persist_folder_sizes(self):
+        self._settings.setValue("folder_sizes", json.dumps(self._folder_sizes))
+
+    def _fresh_size(self, path: str):
+        entry = self._folder_sizes.get(path)
+        if entry and time.time() - entry[2] < self._SIZE_TTL_SECONDS:
+            return entry
+        return None
+
+    def _folder_size_text(self, item: DriveItem) -> str:
+        if self.current_root != MY_FILES_ROOT:
+            return "\u2014"
+        path = f"{self.current_path.rstrip('/')}/{item.name}"
+        entry = self._fresh_size(path)
+        return (human_size(entry[0]) or "0 B") if entry else "\u2026"
+
+    def _queue_folder_sizes(self, items: list[DriveItem]):
+        if self.current_root != MY_FILES_ROOT:
+            return
+        for item in items:
+            if not item.is_folder:
+                continue
+            path = f"{self.current_path.rstrip('/')}/{item.name}"
+            if self._fresh_size(path) or path in self._size_queue:
+                continue
+            self._size_queue.append(path)
+        self._pump_size_queue()
+
+    def _pump_size_queue(self):
+        if self._size_busy or not self._size_queue or not self.cli:
+            return
+        path = self._size_queue.pop(0)
+        self._size_busy = True
+        gen = self._size_gen
+        self._start_worker(
+            self.cli.folder_size,
+            path,
+            on_finished=lambda stats, p=path, g=gen: self._on_size_ready(p, g, stats),
+            on_error=lambda _msg, p=path, g=gen: self._on_size_ready(p, g, None),
+        )
+
+    def _on_size_ready(self, path: str, gen: int, stats):
+        self._size_busy = False
+        if gen == self._size_gen:
+            if stats is not None:
+                self._store_size(path, stats)
+            else:
+                self._apply_size_to_row(path, None)
+        self._pump_size_queue()
+
+    def _store_size(self, path: str, stats):
+        self._folder_sizes[path] = [stats[0], stats[1], time.time()]
+        self._persist_folder_sizes()
+        self._apply_size_to_row(path, stats[0])
+
+    def _apply_size_to_row(self, path: str, size):
+        if self.current_root != MY_FILES_ROOT:
+            return
+        for row, item in enumerate(self.items):
+            if item.is_folder and f"{self.current_path.rstrip('/')}/{item.name}" == path:
+                cell = self.table.item(row, 1)
+                if cell is not None:
+                    cell.setText((human_size(size) or "0 B") if size is not None else "\u2014")
+
+    def _refresh_after_change(self):
+        """Any change inside My files makes cached folder sizes unreliable:
+        drop them, invalidate queued/running counts, then reload the listing."""
+        self._size_gen += 1
+        self._size_queue.clear()
+        self._folder_sizes = {}
+        self._persist_folder_sizes()
+        self.refresh()
 
     def _on_error(self, message: str):
         self.statusBar().showMessage("Error", 3000)
@@ -1287,7 +1382,7 @@ class MainWindow(QMainWindow):
 
     # -- about ------------------------------------------------------------------
 
-    def _about_text(self) -> str:
+    def _about_text(self, update_line: str = "") -> str:
         from . import __version__
 
         cli_ver, newer = self.cli.cli_version() if self.cli else (None, None)
@@ -1299,7 +1394,9 @@ class MainWindow(QMainWindow):
             cli_line = "Proton Drive CLI: not found"
         return (
             f"<b>Proton Drive GUI</b> v{__version__}<br>"
-            f"{cli_line}<br><br>"
+            f"{cli_line}<br>"
+            + (f"{update_line}<br>" if update_line else "")
+            + "<br>"
             "A free desktop client for the official Proton Drive CLI, for noncommercial use.<br><br>"
             '<a href="https://github.com/al3xg0r/protondrive-gui">Project on GitHub</a>'
         )
@@ -1308,12 +1405,36 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setWindowTitle("About Proton Drive GUI")
         box.setTextFormat(Qt.RichText)
-        box.setText(self._about_text())
+        box.setText(self._about_text(update_line="Checking for updates\u2026"))
         label = box.findChild(QLabel, "qt_msgbox_label")
         if label is not None:
             label.setTextInteractionFlags(Qt.TextBrowserInteraction)
             label.setOpenExternalLinks(True)
+        self._start_worker(
+            updates.fetch_latest,
+            on_finished=lambda result: self._about_update_result(box, result),
+            on_error=lambda _msg: self._about_update_result(box, None),
+        )
         box.exec()
+
+    def _about_update_result(self, box: QMessageBox, result):
+        if not box.isVisible():
+            return
+        if result is None:
+            line = "Could not check for updates."
+        else:
+            latest, url = result
+            state = updates.compare(__import__("gui").__version__, latest)
+            if state == "newer":
+                line = (
+                    f"<b>New version available: v{latest}.</b> "
+                    f'<a href="{url}">Download the latest release</a>'
+                )
+            elif state == "unknown":
+                line = "Could not check for updates."
+            else:
+                line = "You have the latest version."
+        box.setText(self._about_text(update_line=line))
 
     # -- upload / download -------------------------------------------------------
 
@@ -1345,7 +1466,7 @@ class MainWindow(QMainWindow):
 
         def _done(_):
             dialog.close()
-            self.refresh()
+            self._refresh_after_change()
 
         def _err(message):
             dialog.close()
