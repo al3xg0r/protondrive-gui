@@ -1005,12 +1005,33 @@ class MainWindow(QMainWindow):
     def _show_properties(self, row: int):
         item = self.items[row]
         full_path = f"{self.current_path.rstrip('/')}/{item.name}"
-        media_type = item.raw.get("mediaType")
-        kind = "Folder" if item.is_folder else (media_type or "File")
-        size_text = "\u2014" if item.is_folder else (human_size(item.size) or "Unknown")
-        modified_text = format_timestamp(item.modified) or "Unknown"
-        shared_text = "Yes" if item.raw.get("isShared") else "No"
+        if item.is_folder and self.cli:
+            self.statusBar().showMessage("Calculating folder size \u2026")
+            self._start_worker(
+                self.cli.folder_size,
+                full_path,
+                on_finished=lambda stats: self._open_information(item, full_path, stats),
+                on_error=lambda _msg: self._open_information(item, full_path, None),
+            )
+            return
+        self._open_information(item, full_path, None)
 
+    def _open_information(self, item: DriveItem, full_path: str, stats):
+        media_type = item.raw.get("mediaType")
+        shared_text = "Yes" if item.raw.get("isShared") else "No"
+        modified_text = format_timestamp(item.modified) or "Unknown"
+        if item.is_folder:
+            kind = "Folder"
+            if stats is not None:
+                size_text = human_size(stats[0]) or "0 B"
+                contents = f"<b>Contents:</b> {stats[1]} item(s)<br>"
+            else:
+                size_text = "Unknown"
+                contents = ""
+        else:
+            kind = media_type or "File"
+            size_text = human_size(item.size) or "Unknown"
+            contents = ""
         box = QMessageBox(self)
         box.setWindowTitle("Information")
         box.setTextFormat(Qt.RichText)
@@ -1018,6 +1039,7 @@ class MainWindow(QMainWindow):
             f"<b>{item.name}</b><br><br>"
             f"<b>Type:</b> {kind}<br>"
             f"<b>Size:</b> {size_text}<br>"
+            f"{contents}"
             f"<b>Modified:</b> {modified_text}<br>"
             f"<b>Shared:</b> {shared_text}<br>"
             f"<b>Path:</b> {full_path}"

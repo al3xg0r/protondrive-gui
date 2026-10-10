@@ -61,7 +61,8 @@ supports:
   styled to match the rest of the app instead of looking like bare default
   Qt widgets
 - Information… (right-click) shows name, type, size, modified date, share
-  status, and full path. Available everywhere, including Photos and Shared,
+  status, and full path (for folders, the total size and item count).
+  Available everywhere, including Photos and Shared,
   since it only reads data already on hand
 - Light/dark theme toggle (bottom of the sidebar) — choice is remembered
 - Remembers the last section and folder you were in, plus window size and
@@ -246,14 +247,13 @@ releases, so re-check these after updating it:
 ## Roadmap
 
 - [x] ~~Packaging as an AppImage~~ — `./build-appimage.sh`.
-- [ ] Folder size / account storage quota — no such command appears in the
-      CLI's help or the official docs at the time of checking; re-check after
-      CLI updates. The docs describe the Account SDK piece (where quota would
-      live) as "incubating, not for public distribution". A folder's total
-      size isn't exposed either — getting one would mean walking
-      `filesystem list` recursively ourselves and summing, which could be
-      slow on large trees. Not implemented automatically; open to adding
-      as an opt-in "Calculate size" action if wanted.
+- [x] ~~Folder size~~ — `filesystem size` shows the total size and item count
+      in Information… for folders. The Size column still shows a dash for
+      folders, so sizes appear on demand rather than for every folder at once.
+- [ ] Account storage quota — no command for it appears in the CLI's help or
+      the official docs at the time of checking; re-check after CLI updates.
+      The docs describe the Account SDK piece (where quota would live) as
+      "incubating, not for public distribution".
 - [ ] Local folder sync — the CLI has no watch/sync mode at all, only manual
       upload/download; any "sync" here would be built on top (watch a local
       folder, auto-upload on change; optionally poll the remote folder too

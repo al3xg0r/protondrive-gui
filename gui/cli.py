@@ -217,6 +217,12 @@ class ProtonDriveCLI:
     def rename(self, path: str, new_name: str) -> None:
         self._run(["filesystem", "rename", path, new_name], json_output=False)
 
+    def folder_size(self, path: str) -> tuple[int, int]:
+        """`filesystem size path` -> (total bytes, number of items inside).
+        Output: {"size": 15215222, "numberOfDescendants": 10}."""
+        data = self._run(["filesystem", "size", path]) or {}
+        return int(data.get("size") or 0), int(data.get("numberOfDescendants") or 0)
+
     def move(self, paths: list[str], target_parent: str) -> None:
         """`filesystem move sourcePath... targetParentPath`."""
         self._run(["filesystem", "move", *paths, target_parent], json_output=False)
