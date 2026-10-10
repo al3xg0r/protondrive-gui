@@ -132,7 +132,11 @@ install_cli() {
             set -e
             if [ "$code" -eq 132 ] || [ "$code" -eq 133 ]; then
                 warn "Default build crashed (Illegal instruction) — falling back to x64-baseline"
-                download_cli_for_platform "linux/x64-baseline"
+                if [ -n "$(fetch_release_row "linux/x64-baseline")" ]; then
+                    download_cli_for_platform "linux/x64-baseline"
+                else
+                    warn "Proton's index lists no x64-baseline build for this version; keeping the default build, which may not run on this CPU."
+                fi
             fi
         fi
     fi

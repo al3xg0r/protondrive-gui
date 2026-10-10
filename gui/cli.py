@@ -171,6 +171,30 @@ class ProtonDriveCLI:
         except ProtonDriveError:
             return False
 
+    def cli_version(self) -> tuple[str | None, str | None]:
+        """Returns (installed CLI version, newer version if one is out).
+
+        The binary prints e.g. "Proton Drive CLI cli-drive@0.8.0+06e8c605" and,
+        when behind, "A newer version is available: 0.9.0 (you have 0.8.0)."
+        Both are read from output rather than assumed, so this stays correct
+        across CLI updates. Returns (None, None) if the binary can't be run.
+        """
+        try:
+            result = subprocess.run(
+                [self.binary_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                stdin=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None, None
+        out = (result.stdout or "") + (result.stderr or "")
+        current = re.search(r"cli-drive@([0-9][\w.]*)", out)
+        newer = re.search(r"newer version is available:\s*([0-9][\w.]*)", out)
+        version = current.group(1).split("+")[0] if current else None
+        return version, (newer.group(1) if newer else None)
+
     # -- filesystem ----------------------------------------------------------
 
     def list_dir(self, path: str) -> list[DriveItem]:

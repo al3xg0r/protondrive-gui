@@ -60,6 +60,10 @@ supports:
   status, and full path — available everywhere, including Photos/Shared,
   since it's read-only
 - Light/dark theme toggle (bottom of the sidebar) — choice is remembered
+- Remembers the last section and folder you were in, plus window size and
+  position, across launches
+- Shows the signed-in account email at the right of the top toolbar (taken
+  from the file listing, so no extra CLI call is needed)
   between launches
 
 Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
@@ -236,8 +240,9 @@ and `--help` output, beyond what's already covered above:
 ## Roadmap
 
 - [x] ~~Packaging as an AppImage~~ — `./build-appimage.sh`.
-- [ ] Folder size / account storage quota — re-checked against Proton's
-      latest docs (Sep 2026): still no such command, and their own docs
+- [ ] Folder size / account storage quota — checked against CLI 0.8.0 only;
+      the current official release is 0.9.0 (released 2026-10-05) and has not
+      been re-checked yet. No such command was found on 0.8.0, and their docs
       now explicitly describe the Account SDK piece (where quota would
       live) as "incubating, not for public distribution". A folder's total
       size isn't exposed either — getting one would mean walking
@@ -280,7 +285,8 @@ and `--help` output, beyond what's already covered above:
       is still files-only; folder support there is unconfirmed.
 - [x] ~~Upload/download progress~~ — done, but fragile by nature: it scrapes the
       CLI's live spinner text (`NN.NN% name (size)`), which isn't a documented
-      format and has no `--json` equivalent as of CLI 0.8.0. May silently stop
+      format and has no `--json` equivalent (last checked on CLI 0.8.0; not yet
+      re-verified on 0.9.0). May silently stop
       working on a future CLI update.
 - [ ] Sharing (`sharing invite`, list existing shares)
 - [ ] Search
@@ -288,7 +294,7 @@ and `--help` output, beyond what's already covered above:
 - [x] ~~Dark/light theme~~ — manual toggle in the sidebar, remembered
       between launches via QSettings (not tied to the system theme
       automatically — no "follow system" mode yet)
-- [ ] Show logged-in account + storage quota (not currently possible — `proton-drive --help` exposes no account/whoami/quota command, only `auth login` / `auth logout`)
+- [x] ~~Show logged-in account~~ — email shown in the top toolbar, read from the file listing's owner field. Storage quota is still not shown (see above).
 - [x] ~~One-shot installer~~ — `./install.sh` fetches the CLI (with checksum
       verification), installs system deps, sets up the venv, and installs
       the desktop launcher

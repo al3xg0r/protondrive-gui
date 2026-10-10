@@ -1202,17 +1202,28 @@ class MainWindow(QMainWindow):
 
     # -- about ------------------------------------------------------------------
 
-    def show_about(self):
+    def _about_text(self) -> str:
         from . import __version__
 
+        cli_ver, newer = self.cli.cli_version() if self.cli else (None, None)
+        if cli_ver:
+            cli_line = f"Proton Drive CLI: v{cli_ver}"
+            if newer:
+                cli_line += f" (v{newer} is available)"
+        else:
+            cli_line = "Proton Drive CLI: not found"
+        return (
+            f"<b>Proton Drive GUI</b> v{__version__}<br>"
+            f"{cli_line}<br><br>"
+            "A free desktop client for the official Proton Drive CLI, for noncommercial use.<br><br>"
+            '<a href="https://github.com/al3xg0r/protondrive-gui">Project on GitHub</a>'
+        )
+
+    def show_about(self):
         box = QMessageBox(self)
         box.setWindowTitle("About Proton Drive GUI")
         box.setTextFormat(Qt.RichText)
-        box.setText(
-            f"<b>Proton Drive GUI</b> v{__version__}<br><br>"
-            "A free, open-source desktop client for the official Proton Drive CLI.<br><br>"
-            '<a href="https://github.com/al3xg0r/protondrive-gui">Project on GitHub</a>'
-        )
+        box.setText(self._about_text())
         label = box.findChild(QLabel, "qt_msgbox_label")
         if label is not None:
             label.setTextInteractionFlags(Qt.TextBrowserInteraction)
