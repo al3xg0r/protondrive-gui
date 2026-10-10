@@ -10,6 +10,7 @@ import urllib.request
 REPO = "al3xg0r/protondrive-gui"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 LATEST_PAGE = f"https://github.com/{REPO}/releases/latest"
+CLI_DOWNLOAD_PAGE = "https://proton.me/download/drive/cli/index.html"
 
 
 def fetch_latest() -> tuple[str, str]:

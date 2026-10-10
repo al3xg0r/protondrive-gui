@@ -7,10 +7,12 @@ import json
 import time
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThreadPool
+from PySide6.QtCore import QEvent, QModelIndex, QSettings, QSize, Qt, QThreadPool
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QProxyStyle,
+    QStyle,
     QApplication,
     QFileDialog,
     QFrame,
@@ -181,6 +183,7 @@ _GRID_BASE_STYLE = """
         text-align: center;
     }
     QListWidget::item:hover { background: palette(midlight); }
+    QListWidget::item:focus { outline: none; border: none; }
     QListWidget::item:selected {
         background: palette(highlight);
         color: palette(highlighted-text);
@@ -199,6 +202,7 @@ _TABLE_BASE_STYLE = """
         font-weight: 600;
     }
     QTableWidget::item { padding: 2px 8px; }
+    QTableWidget::item:focus { outline: none; border: none; }
     QTableWidget::item:selected {
         background: palette(highlight);
         color: palette(highlighted-text);
@@ -265,6 +269,16 @@ APP_STYLESHEET = """
         border-radius: 4px;
     }
 """
+
+
+class NoFocusRectStyle(QProxyStyle):
+    """Fusion draws a dotted focus rectangle around the current item, which
+    looks out of place here. This style simply never draws it."""
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element == QStyle.PE_FrameFocusRect:
+            return
+        super().drawPrimitive(element, option, painter, widget)
 
 
 class MainWindow(QMainWindow):
@@ -686,7 +700,11 @@ class MainWindow(QMainWindow):
         self.table.cellDoubleClicked.connect(self._row_double_clicked)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu_table)
+        self._table_style = NoFocusRectStyle("Fusion")  # own Fusion copy: no dangling base style
+        self._table_style.setParent(self)
+        self.table.setStyle(self._table_style)
         self.table.installEventFilter(self)
+        self.table.viewport().installEventFilter(self)
         self.view_stack.addWidget(self.table)
 
         self.grid = QListWidget()
@@ -709,7 +727,11 @@ class MainWindow(QMainWindow):
         )
         self.grid.setContextMenuPolicy(Qt.CustomContextMenu)
         self.grid.customContextMenuRequested.connect(self._show_context_menu_grid)
+        self._grid_style = NoFocusRectStyle("Fusion")  # own Fusion copy: no dangling base style
+        self._grid_style.setParent(self)
+        self.grid.setStyle(self._grid_style)
         self.grid.installEventFilter(self)
+        self.grid.viewport().installEventFilter(self)
         self.grid.viewport().setAutoFillBackground(False)
         self.grid_panel = QFrame()
         self.grid_panel.setObjectName("gridPanel")
@@ -783,6 +805,17 @@ class MainWindow(QMainWindow):
     # -- keyboard shortcuts -------------------------------------------------------
 
     def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress and obj in (
+            self.table.viewport(),
+            self.grid.viewport(),
+        ):
+            # Clicking empty space clears the selection, but Qt keeps the
+            # current item, which keeps drawing a focus rectangle around it.
+            view = self.table if obj is self.table.viewport() else self.grid
+            if not view.indexAt(event.position().toPoint()).isValid():
+                view.clearSelection()
+                view.setCurrentIndex(QModelIndex())
+            return False
         if (
             event.type() == QEvent.KeyPress
             and event.key() == Qt.Key_Delete
@@ -1385,18 +1418,22 @@ class MainWindow(QMainWindow):
     def _about_text(self, update_line: str = "") -> str:
         from . import __version__
 
-        cli_ver, newer = self.cli.cli_version() if self.cli else (None, None)
-        if cli_ver:
-            cli_line = f"Proton Drive CLI: v{cli_ver}"
-            if newer:
-                cli_line += f" (v{newer} is available)"
+        cli_ver, cli_newer = self.cli.cli_version() if self.cli else (None, None)
+        if cli_ver and cli_newer:
+            cli_line = (
+                f"Proton Drive CLI: v{cli_ver} &nbsp;\u2014&nbsp; "
+                f"New version available: v{cli_newer}. "
+                f'<a href="{updates.CLI_DOWNLOAD_PAGE}">Download</a>'
+            )
+        elif cli_ver:
+            cli_line = f"Proton Drive CLI: v{cli_ver} &nbsp;\u2014&nbsp; You have the latest version."
         else:
             cli_line = "Proton Drive CLI: not found"
         return (
-            f"<b>Proton Drive GUI</b> v{__version__}<br>"
-            f"{cli_line}<br>"
-            + (f"{update_line}<br>" if update_line else "")
+            f"<b>Proton Drive GUI</b> v{__version__}"
+            + (f" &nbsp;\u2014&nbsp; {update_line}" if update_line else "")
             + "<br>"
+            f"{cli_line}<br><br>"
             "A free desktop client for the official Proton Drive CLI, for noncommercial use.<br><br>"
             '<a href="https://github.com/al3xg0r/protondrive-gui">Project on GitHub</a>'
         )
