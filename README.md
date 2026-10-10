@@ -24,7 +24,11 @@ supports:
 - Upload/download progress bar (best-effort — scrapes the CLI's live spinner
   output since there's no `--json` progress format; see caveat in Roadmap)
 - Delete key moves the selected item(s) in "My files" to Trash (confirms first)
-- New folder, rename, and move-to-Trash (right-click a row) — "My files" only for now
+- Right-click a file or folder in My files for the same menu as the web app:
+  Download, Share (coming soon), Move to folder, Make a copy, Rename,
+  Information, Move to Trash. Move to folder opens a picker that browses
+  your folders. Photos offers Download and Information; Shared sections
+  offer Information only until their actions are confirmed.
 - Browse Trash, restore or permanently delete individual items (right-click),
   and Empty Trash (only shown while browsing Trash; both confirm first, since
   they're irreversible)
@@ -56,9 +60,9 @@ supports:
 - Context menus and dialogs (popups, message boxes, the progress bar) are
   styled to match the rest of the app instead of looking like bare default
   Qt widgets
-- Right-click → Properties… shows name, type, size, modified date, share
-  status, and full path — available everywhere, including Photos/Shared,
-  since it's read-only
+- Information… (right-click) shows name, type, size, modified date, share
+  status, and full path. Available everywhere, including Photos and Shared,
+  since it only reads data already on hand
 - Light/dark theme toggle (bottom of the sidebar) — choice is remembered
 - Remembers the last section and folder you were in, plus window size and
   position, across launches
@@ -200,7 +204,8 @@ Pull requests fixing this for real-world output are very welcome.
 ## What the CLI can and can't do (per its official docs)
 
 Cross-checked against the [official CLI README](https://github.com/ProtonDriveApps/sdk/blob/main/cli/README.md)
-and `--help` output, beyond what's already covered above:
+and `--help` output, beyond what's already covered above. The CLI changes between
+releases, so re-check these after updating it:
 
 **Confirmed possible, not yet wired into the GUI:**
 - Copy/move (`filesystem copy`, `filesystem move`) — not exposed in the UI yet
@@ -215,8 +220,9 @@ and `--help` output, beyond what's already covered above:
   drag & drop in My files
 
 **Confirmed not possible, at least not through this CLI:**
-- Account name, email, or storage quota — no `whoami`/`account`/`quota`
-  command exists
+- Account storage quota — no `whoami`/`account`/`quota` command appears in
+  the CLI's help. The account email is shown anyway, read from the owner
+  field of file listings rather than from a dedicated command
 - Real image/video thumbnails — the CLI generates WebP thumbnails *on
   upload* for the official apps' own use, but exposes no command to fetch
   one back down; only full-file `photo download` gets you actual pixels
@@ -240,10 +246,9 @@ and `--help` output, beyond what's already covered above:
 ## Roadmap
 
 - [x] ~~Packaging as an AppImage~~ — `./build-appimage.sh`.
-- [ ] Folder size / account storage quota — checked against CLI 0.8.0 only;
-      the current official release is 0.9.0 (released 2026-10-05) and has not
-      been re-checked yet. No such command was found on 0.8.0, and their docs
-      now explicitly describe the Account SDK piece (where quota would
+- [ ] Folder size / account storage quota — no such command appears in the
+      CLI's help or the official docs at the time of checking; re-check after
+      CLI updates. The docs describe the Account SDK piece (where quota would
       live) as "incubating, not for public distribution". A folder's total
       size isn't exposed either — getting one would mean walking
       `filesystem list` recursively ourselves and summing, which could be
@@ -285,10 +290,11 @@ and `--help` output, beyond what's already covered above:
       is still files-only; folder support there is unconfirmed.
 - [x] ~~Upload/download progress~~ — done, but fragile by nature: it scrapes the
       CLI's live spinner text (`NN.NN% name (size)`), which isn't a documented
-      format and has no `--json` equivalent (last checked on CLI 0.8.0; not yet
-      re-verified on 0.9.0). May silently stop
-      working on a future CLI update.
-- [ ] Sharing (`sharing invite`, list existing shares)
+      format and has no `--json` equivalent. May silently stop working after a
+      CLI update.
+- [ ] Sharing (`sharing invite`, list existing shares) — the Share… menu
+      entry is a placeholder until the CLI's role values and output formats
+      are confirmed
 - [ ] Search
 - [ ] Remember last-visited folder / window state
 - [x] ~~Dark/light theme~~ — manual toggle in the sidebar, remembered

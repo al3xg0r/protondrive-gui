@@ -217,6 +217,19 @@ class ProtonDriveCLI:
     def rename(self, path: str, new_name: str) -> None:
         self._run(["filesystem", "rename", path, new_name], json_output=False)
 
+    def move(self, paths: list[str], target_parent: str) -> None:
+        """`filesystem move sourcePath... targetParentPath`."""
+        self._run(["filesystem", "move", *paths, target_parent], json_output=False)
+
+    def copy_each(self, pairs: list[tuple[str, str]], target_parent: str) -> None:
+        """Copies each (source, new_name) into target_parent. `filesystem copy`
+        takes -n NAME for the copy's name, so each item gets its own call."""
+        for source, new_name in pairs:
+            self._run(
+                ["filesystem", "copy", "-n", new_name, source, target_parent],
+                json_output=False,
+            )
+
     def trash(self, paths: list[str]) -> None:
         """Moves items to Trash (reversible from within Proton Drive) —
         deliberately not wired to the CLI's separate, permanent

@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
 from . import theme
+from .folder_picker import FolderPickerDialog
 from .icons import DRAWERS, make_icon, make_stateful_icon
 from .workers import Worker
 
@@ -904,40 +905,102 @@ class MainWindow(QMainWindow):
             item.setSelected(True)
         self._open_context_menu(row, self.grid.viewport().mapToGlobal(pos))
 
+    def _context_menu_entries(self, row: int) -> list:
+        """Menu contents for one row, as ordered entries of
+        (label, icon key, handler, enabled); None is a separator."""
+        information = ("Information\u2026", "about", lambda: self._show_properties(row), True)
+        if self.current_root == TRASH_ROOT:
+            return [
+                ("Restore", "refresh", lambda: self._restore_selected(), True),
+                ("Delete Permanently\u2026", "delete", lambda: self._permanently_delete_selected(), True),
+                None,
+                information,
+            ]
+        if self.current_root == PHOTOS_ROOT:
+            return [
+                ("Download", "download", lambda: self.download_selected(), True),
+                None,
+                information,
+            ]
+        if self.current_root == MY_FILES_ROOT:
+            return [
+                ("Download", "download", lambda: self.download_selected(), True),
+                ("Share\u2026 (coming soon)", "shared", None, False),
+                None,
+                ("Move to folder\u2026", "folder", lambda: self._move_selected(), True),
+                ("Make a copy", "file", lambda: self._copy_selected(), True),
+                ("Rename\u2026", "rename", lambda: self._rename_item(row), True),
+                information,
+                None,
+                ("Move to Trash\u2026", "delete", lambda: self._delete_selected(), True),
+            ]
+        # Shared roots: Information only, until their verbs are confirmed.
+        return [information]
+
     def _open_context_menu(self, row: int, global_pos):
         menu = QMenu(self)
-        restore_action = delete_permanent_action = None
-        rename_action = trash_action = None
-
-        if self.current_root == TRASH_ROOT:
-            restore_action = menu.addAction(self._icon("refresh", size=16), "Restore")
-            delete_permanent_action = menu.addAction(
-                self._icon("delete", size=16), "Delete Permanently\u2026"
-            )
-        elif self.current_root not in CONTEXT_MENU_UNSUPPORTED_ROOTS:
-            # rename/delete semantics are unconfirmed for Photos/Shared —
-            # skip those two rather than guess, but Properties is just a
-            # read-only look at data we already have, safe everywhere.
-            rename_action = menu.addAction(self._icon("rename", size=16), "Rename\u2026")
-            trash_action = menu.addAction(self._icon("delete", size=16), "Move to Trash\u2026")
-
-        if not menu.isEmpty():
-            menu.addSeparator()
-        properties_action = menu.addAction(self._icon("about", size=16), "Properties\u2026")
-
+        bound = []
+        for entry in self._context_menu_entries(row):
+            if entry is None:
+                menu.addSeparator()
+                continue
+            label, icon_key, handler, enabled = entry
+            action = menu.addAction(self._icon(icon_key, size=16), label)
+            action.setEnabled(enabled)
+            bound.append((action, handler))
         chosen = menu.exec(global_pos)
-        if chosen is None:
+        for action, handler in bound:
+            if chosen is action and handler is not None:
+                handler()
+                return
+
+    def _run_for_dialog(self, fn, *args, on_finished=None, on_error=None):
+        return self._start_worker(fn, *args, on_finished=on_finished, on_error=on_error)
+
+    def _move_selected(self):
+        rows = self._selected_rows()
+        if not rows or not self.cli:
             return
-        if chosen == restore_action:
-            self._restore_selected()
-        elif chosen == delete_permanent_action:
-            self._permanently_delete_selected()
-        elif chosen == rename_action:
-            self._rename_item(row)
-        elif chosen == trash_action:
-            self._delete_selected()
-        elif chosen == properties_action:
-            self._show_properties(row)
+        base = self.current_path.rstrip("/")
+        sources = [f"{base}/{self.items[r].name}" for r in rows]
+
+        def on_pick(target: str) -> bool:
+            for src_path in sources:
+                if target == src_path or target.startswith(src_path + "/"):
+                    QMessageBox.warning(self, "Move to folder", "A folder can't be moved into itself.")
+                    return False
+            self.statusBar().showMessage(f"Moving {len(sources)} item(s) \u2026")
+            self._start_worker(self.cli.move, sources, target, on_finished=lambda _: self.refresh())
+            return True
+
+        dialog = FolderPickerDialog(
+            self,
+            "Move to folder",
+            start_path=base,
+            root=MY_FILES_ROOT,
+            root_label=ROOT_LABELS[MY_FILES_ROOT],
+            list_dir=self.cli.list_dir,
+            run_async=self._run_for_dialog,
+            on_pick=on_pick,
+        )
+        dialog.exec()
+
+    def _copy_selected(self):
+        rows = self._selected_rows()
+        if not rows or not self.cli:
+            return
+        parent = self.current_path.rstrip("/")
+        pairs = []
+        for r in rows:
+            item = self.items[r]
+            if item.is_folder:
+                new_name = f"{item.name} (copy)"
+            else:
+                p = PurePosixPath(item.name)
+                new_name = f"{p.stem} (copy){p.suffix}"
+            pairs.append((f"{parent}/{item.name}", new_name))
+        self.statusBar().showMessage(f"Copying {len(pairs)} item(s) \u2026")
+        self._start_worker(self.cli.copy_each, pairs, parent, on_finished=lambda _: self.refresh())
 
     def _show_properties(self, row: int):
         item = self.items[row]
@@ -949,7 +1012,7 @@ class MainWindow(QMainWindow):
         shared_text = "Yes" if item.raw.get("isShared") else "No"
 
         box = QMessageBox(self)
-        box.setWindowTitle("Properties")
+        box.setWindowTitle("Information")
         box.setTextFormat(Qt.RichText)
         box.setText(
             f"<b>{item.name}</b><br><br>"
