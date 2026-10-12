@@ -271,6 +271,14 @@ APP_STYLESHEET = """
 """
 
 
+REPO_URL = "https://github.com/al3xg0r/protondrive-gui"
+ABOUT_LINKS = [
+    ("Project on GitHub", REPO_URL),
+    ("Report a bug", f"{REPO_URL}/issues/new"),
+    ("Support the project", "https://ko-fi.com/al3xg0r"),
+]
+
+
 class NoFocusRectStyle(QProxyStyle):
     """Fusion draws a dotted focus rectangle around the current item, which
     looks out of place here. This style simply never draws it."""
@@ -1429,13 +1437,16 @@ class MainWindow(QMainWindow):
             cli_line = f"Proton Drive CLI: v{cli_ver} &nbsp;\u2014&nbsp; You have the latest version."
         else:
             cli_line = "Proton Drive CLI: not found"
+        gui_line = f"<b>Proton Drive GUI:</b> v{__version__}"
+        if update_line:
+            gui_line += f" &nbsp;\u2014&nbsp; {update_line}"
         return (
-            f"<b>Proton Drive GUI</b> v{__version__}"
-            + (f" &nbsp;\u2014&nbsp; {update_line}" if update_line else "")
-            + "<br>"
-            f"{cli_line}<br><br>"
+            f"<p style='margin:0 0 12px 0'>{gui_line}</p>"
+            f"<p style='margin:0 0 12px 0'>{cli_line}</p>"
             "A free desktop client for the official Proton Drive CLI, for noncommercial use.<br><br>"
-            '<a href="https://github.com/al3xg0r/protondrive-gui">Project on GitHub</a>'
+            + " &nbsp;\u00b7&nbsp; ".join(
+                f'<a href="{url}">{label}</a>' for label, url in ABOUT_LINKS
+            )
         )
 
     def show_about(self):
