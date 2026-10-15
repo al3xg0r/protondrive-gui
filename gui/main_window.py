@@ -7,8 +7,8 @@ import json
 import time
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QEvent, QModelIndex, QSettings, QSize, Qt, QThreadPool
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPalette
+from PySide6.QtCore import QEvent, QModelIndex, QSettings, QSize, Qt, QThreadPool, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QProxyStyle,
@@ -170,14 +170,13 @@ _SIDEBAR_STYLESHEET = """
     QToolButton#newFolderButton:hover { background: #24b563; }
     QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
     QTreeWidget { background: transparent; border: none; outline: none; }
-    QTreeWidget::item { padding: 3px 4px; border-radius: 5px; }
-    QTreeWidget::item:hover { background: palette(alternate-base); }
-    QTreeWidget::item:selected { background: palette(highlight); color: palette(highlighted-text); }
     QTreeWidget QScrollBar:vertical { background: transparent; width: 8px; margin: 2px 0; }
     QTreeWidget QScrollBar::handle:vertical { background: transparent; min-height: 24px; border-radius: 4px; }
     QTreeWidget:hover QScrollBar::handle:vertical { background: palette(mid); }
     QTreeWidget QScrollBar::add-line:vertical, QTreeWidget QScrollBar::sub-line:vertical { height: 0; }
     QTreeWidget QScrollBar::add-page:vertical, QTreeWidget QScrollBar::sub-page:vertical { background: transparent; }
+    QToolButton#treeToggle, QToolButton#treeToggle:checked { background: transparent; padding: 6px 4px; }
+    QToolButton#treeToggle:hover { background: palette(alternate-base); }
     QLabel#accountLabel {
         color: palette(text);
         font-size: 11px;
@@ -300,6 +299,35 @@ class NoFocusRectStyle(QProxyStyle):
         super().drawPrimitive(element, option, painter, widget)
 
 
+class TreeRowStyle(NoFocusRectStyle):
+    """For the sidebar tree only: Qt paints a full-width row background behind
+    the selected item, including the arrow column, which shows as a square
+    strip. Skipping that background lets the item's own rounded highlight be
+    the only thing drawn."""
+
+    BRANCH_WIDTH = 14  # matches the tree's indentation: the arrow column
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element == QStyle.PE_PanelItemViewRow:
+            return
+        if element == QStyle.PE_PanelItemViewItem and option.state & QStyle.State_Selected:
+            # Our own rounded highlight, starting after the arrow column.
+            from PySide6.QtCore import QRectF
+            from PySide6.QtGui import QPen
+            # Start just before the folder icon, wherever it sits (depth varies).
+            icon = self.subElementRect(QStyle.SE_ItemViewItemDecoration, option, widget)
+            left = (icon.left() - 6) if icon.isValid() else option.rect.left() + self.BRANCH_WIDTH
+            rect = QRectF(left, option.rect.top() + 1, option.rect.right() - left - 2, option.rect.height() - 2)
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setPen(QPen(Qt.NoPen))
+            painter.setBrush(option.palette.highlight())
+            painter.drawRoundedRect(rect, 5, 5)
+            painter.restore()
+            return
+        super().drawPrimitive(element, option, painter, widget)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -340,6 +368,10 @@ class MainWindow(QMainWindow):
         self._size_queue: list[str] = []
         self._size_busy = False
         self._size_gen = 0
+        self._tree_children: dict[str, list[str]] = {}
+        self._probe_queue: list[str] = []
+        self._probe_busy = False
+        self._probe_gen = 0
         saved_theme = self._settings.value("theme", theme.LIGHT)
         self.current_theme = saved_theme if saved_theme in (theme.LIGHT, theme.DARK) else theme.LIGHT
         self._apply_theme(self.current_theme, persist=False)
@@ -586,6 +618,8 @@ class MainWindow(QMainWindow):
                 row.setSpacing(0)
                 row.addWidget(button, 1)
                 self._tree_toggle = QToolButton()
+                self._tree_toggle.setObjectName("treeToggle")
+                self._tree_toggle.setFixedWidth(26)
                 self._tree_toggle.setAutoRaise(True)
                 self._tree_toggle.setCheckable(True)
                 self._tree_toggle.setToolTip("Show folders")
@@ -823,7 +857,7 @@ class MainWindow(QMainWindow):
         tree.setMaximumHeight(260)
         tree.setSelectionMode(QAbstractItemView.SingleSelection)
         tree.setFocusPolicy(Qt.NoFocus)
-        self._tree_style = NoFocusRectStyle("Fusion")
+        self._tree_style = TreeRowStyle("Fusion")
         self._tree_style.setParent(self)
         tree.setStyle(self._tree_style)
         tree.itemExpanded.connect(self._on_tree_expanded)
@@ -840,6 +874,7 @@ class MainWindow(QMainWindow):
         self.folder_tree.setVisible(open_)
         if open_ and self.cli:
             self._load_tree_roots()
+        self._fit_tree_height()
 
     def _load_tree_roots(self):
         self._start_worker(
@@ -850,44 +885,110 @@ class MainWindow(QMainWindow):
         )
 
     def _fill_tree_roots(self, items):
+        names = sorted((i.name for i in items if i.is_folder), key=str.lower)
+        self._tree_children[MY_FILES_ROOT] = names
         self.folder_tree.clear()
-        for item in sorted((i for i in items if i.is_folder), key=lambda i: i.name.lower()):
-            self._add_tree_node(self.folder_tree, f"{MY_FILES_ROOT}/{item.name}", item.name)
+        for name in names:
+            self._add_tree_node(self.folder_tree, f"{MY_FILES_ROOT}/{name}", name)
+        self._fit_tree_height()
         self._sync_tree_selection()
 
     def _add_tree_node(self, parent, path: str, name: str):
         node = QTreeWidgetItem([name])
         node.setIcon(0, self._row_icons["folder"])
         node.setData(0, Qt.UserRole, path)
-        # A placeholder child gives the node an expand arrow before its
-        # contents are loaded; it is removed once the children arrive.
-        node.addChild(QTreeWidgetItem([""]))
         if isinstance(parent, QTreeWidget):
             parent.addTopLevelItem(node)
         else:
             parent.addChild(node)
+        self._apply_subfolder_state(node, path)
+        self._queue_subfolder_probe(path)
+
+    def _apply_subfolder_state(self, node, path: str):
+        """Shows an expand arrow only when the folder is known to contain
+        subfolders. A placeholder child is what makes Qt draw the arrow; it is
+        removed when the real children are added."""
+        if node.data(0, Qt.UserRole + 1):
+            return  # already expanded and filled
+        node.takeChildren()
+        names = self._tree_children.get(path)
+        if names:
+            node.addChild(QTreeWidgetItem([""]))
+
+    def _queue_subfolder_probe(self, path: str):
+        if path in self._tree_children or path in self._probe_queue:
+            return
+        if path == getattr(self, "_priority_probe", None):
+            self._priority_probe = None
+            self._probe_queue.insert(0, path)
+        else:
+            self._probe_queue.append(path)
+        self._pump_subfolder_probe()
+
+    def _pump_subfolder_probe(self):
+        if self._probe_busy or not self._probe_queue or not self.cli:
+            return
+        path = self._probe_queue.pop(0)
+        self._probe_busy = True
+        gen = self._probe_gen
+        self._start_worker(
+            self.cli.list_dir,
+            path,
+            on_finished=lambda items, p=path, g=gen: self._on_subfolder_probe(p, g, items),
+            on_error=lambda _msg, p=path, g=gen: self._on_subfolder_probe(p, g, None),
+        )
+
+    def _on_subfolder_probe(self, path: str, gen: int, items):
+        self._probe_busy = False
+        if gen == self._probe_gen and items is not None:
+            self._tree_children[path] = sorted((i.name for i in items if i.is_folder), key=str.lower)
+            node = self._find_tree_item(path)
+            if node is not None:
+                self._apply_subfolder_state(node, path)
+            self._fit_tree_height()
+        self._pump_subfolder_probe()
 
     def _on_tree_expanded(self, node):
         if node.data(0, Qt.UserRole + 1):
             return
         node.setData(0, Qt.UserRole + 1, True)
         path = node.data(0, Qt.UserRole)
-        self._start_worker(
-            self.cli.list_dir,
-            path,
-            on_finished=lambda items, p=path: self._fill_tree_children(p, items),
-            on_error=lambda _msg, p=path: self._fill_tree_children(p, []),
-        )
+        names = self._tree_children.get(path)
+        if names is not None:
+            self._fill_tree_children(path, names)
+        else:
+            self._start_worker(
+                self.cli.list_dir,
+                path,
+                on_finished=lambda items, p=path: self._fill_tree_children(
+                    p, sorted((i.name for i in items if i.is_folder), key=str.lower)
+                ),
+                on_error=lambda _msg, p=path: self._fill_tree_children(p, []),
+            )
 
-    def _fill_tree_children(self, path: str, items):
+    def _fill_tree_children(self, path: str, names):
         # Look the node up by path at callback time: the tree may have been
         # rebuilt while the listing was running, and the old node may be gone.
         node = self._find_tree_item(path)
         if node is None:
             return
+        self._tree_children[path] = list(names)
         node.takeChildren()
-        for item in sorted((i for i in items if i.is_folder), key=lambda i: i.name.lower()):
-            self._add_tree_node(node, f"{path}/{item.name}", item.name)
+        for name in names:
+            self._add_tree_node(node, f"{path}/{name}", name)
+        self._fit_tree_height()
+
+    def _fit_tree_height(self):
+        tree = self.folder_tree
+        count = 0
+        stack = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+        while stack:
+            node = stack.pop()
+            if node.data(0, Qt.UserRole):
+                count += 1
+                stack.extend(node.child(i) for i in range(node.childCount()))
+        row = tree.sizeHintForRow(0) if tree.topLevelItemCount() else 22
+        tree.setFixedHeight(min(260, count * max(row, 20) + 4) if count else 0)
 
     def _find_tree_item(self, path: str):
         stack = [self.folder_tree.topLevelItem(i) for i in range(self.folder_tree.topLevelItemCount())]
@@ -913,6 +1014,8 @@ class MainWindow(QMainWindow):
         node = self._find_tree_item(self.current_path) if self.current_root == MY_FILES_ROOT else None
         if node is not None:
             tree.setCurrentItem(node)
+            if self.current_path != MY_FILES_ROOT:
+                self.root_actions[MY_FILES_ROOT].setChecked(False)
         else:
             tree.clearSelection()
 
@@ -1339,7 +1442,8 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(f"Creating folder \u201c{name}\u201d \u2026")
         self._start_worker(
-            self.cli.create_folder, self.current_path, name, on_finished=lambda _: self._refresh_after_change()
+            self.cli.create_folder, self.current_path, name,
+            on_finished=lambda _: self._after_folder_created(self.current_path),
         )
 
     # -- data loading --------------------------------------------------------
@@ -1497,6 +1601,22 @@ class MainWindow(QMainWindow):
                 if cell is not None:
                     cell.setText((human_size(size) or "0 B") if size is not None else "\u2014")
 
+    def _after_folder_created(self, parent: str):
+        """The new folder can take a moment to show up in listings, so the
+        parent's subfolder check is repeated a little later, first in line."""
+        self._refresh_after_change()
+        self._priority_probe = parent
+        QTimer.singleShot(1500, lambda: self._reprobe_folder(parent))
+
+    def _reprobe_folder(self, path: str):
+        self._tree_children.pop(path, None)
+        if self._find_tree_item(path) is None:
+            return
+        if path in self._probe_queue:
+            self._probe_queue.remove(path)
+        self._probe_queue.insert(0, path)
+        self._pump_subfolder_probe()
+
     def _refresh_after_change(self):
         """Any change inside My files makes cached folder sizes unreliable:
         drop them, invalidate queued/running counts, then reload the listing."""
@@ -1504,6 +1624,9 @@ class MainWindow(QMainWindow):
         self._size_queue.clear()
         self._folder_sizes = {}
         self._persist_folder_sizes()
+        self._tree_children = {}
+        self._probe_queue.clear()
+        self._probe_gen += 1
         self._reload_folder_tree()
         self.refresh()
 
