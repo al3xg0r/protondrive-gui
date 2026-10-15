@@ -67,6 +67,10 @@ supports:
 - Light/dark theme toggle (bottom of the sidebar) — choice is remembered
 - Remembers the last section and folder you were in, plus window size and
   position, across launches
+- Expandable folder tree under My files in the sidebar: click the arrow to show
+  your top-level folders, expand any folder to load its subfolders, click a
+  folder to open it. Scrollbar appears when you hover over the tree
+- List or grid view is remembered across launches
 - Folder sizes in the Size column are counted in the background (one folder at
   a time) and remembered between launches. They're refreshed after an hour, or
   immediately after any change made in the app

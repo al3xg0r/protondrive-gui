@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QSizePolicy,
+    QTreeWidget,
+    QTreeWidgetItem,
     QStackedWidget,
     QStatusBar,
     QTableWidget,
@@ -167,6 +169,15 @@ _SIDEBAR_STYLESHEET = """
     }
     QToolButton#newFolderButton:hover { background: #24b563; }
     QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
+    QTreeWidget { background: transparent; border: none; outline: none; }
+    QTreeWidget::item { padding: 3px 4px; border-radius: 5px; }
+    QTreeWidget::item:hover { background: palette(alternate-base); }
+    QTreeWidget::item:selected { background: palette(highlight); color: palette(highlighted-text); }
+    QTreeWidget QScrollBar:vertical { background: transparent; width: 8px; margin: 2px 0; }
+    QTreeWidget QScrollBar::handle:vertical { background: transparent; min-height: 24px; border-radius: 4px; }
+    QTreeWidget:hover QScrollBar::handle:vertical { background: palette(mid); }
+    QTreeWidget QScrollBar::add-line:vertical, QTreeWidget QScrollBar::sub-line:vertical { height: 0; }
+    QTreeWidget QScrollBar::add-page:vertical, QTreeWidget QScrollBar::sub-page:vertical { background: transparent; }
     QLabel#accountLabel {
         color: palette(text);
         font-size: 11px;
@@ -347,6 +358,10 @@ class MainWindow(QMainWindow):
         self._apply_root_ui_state(self.current_root)
         self.back_action.setEnabled(self.current_path != self.current_root)
         self._update_breadcrumbs()
+        mode = "grid" if self._settings.value("view_mode", "list") == "grid" else "list"
+        self._set_view_mode(mode)
+        self.list_view_action.setChecked(mode == "list")
+        self.grid_view_action.setChecked(mode == "grid")
 
         saved_geometry = self._settings.value("window/geometry")
         if saved_geometry is not None:
@@ -565,7 +580,27 @@ class MainWindow(QMainWindow):
             )
             action.setCheckable(True)
             action.triggered.connect(lambda _checked=False, r=root: self.switch_root(r))
-            sidebar_layout.addWidget(self._sidebar_button(action))
+            button = self._sidebar_button(action)
+            if root == MY_FILES_ROOT:
+                row = QHBoxLayout()
+                row.setSpacing(0)
+                row.addWidget(button, 1)
+                self._tree_toggle = QToolButton()
+                self._tree_toggle.setAutoRaise(True)
+                self._tree_toggle.setCheckable(True)
+                self._tree_toggle.setToolTip("Show folders")
+                self._tree_toggle.setChecked(getattr(self, "_tree_open", False))
+                self._tree_toggle.toggled.connect(self._toggle_folder_tree)
+                row.addWidget(self._tree_toggle)
+                sidebar_layout.addLayout(row)
+                self.folder_tree = self._build_folder_tree()
+                sidebar_layout.addWidget(self.folder_tree)
+                self._toggle_folder_tree_arrow(getattr(self, "_tree_open", False))
+                if getattr(self, "_tree_open", False) and self.cli:
+                    self.folder_tree.setVisible(True)
+                    self._load_tree_roots()
+            else:
+                sidebar_layout.addWidget(button)
             self.root_actions[root] = action
 
         divider = QFrame()
@@ -775,8 +810,124 @@ class MainWindow(QMainWindow):
 
     # -- view mode (list / grid) --------------------------------------------------
 
+    # -- sidebar folder tree ----------------------------------------------------
+
+    def _build_folder_tree(self) -> QTreeWidget:
+        tree = QTreeWidget()
+        tree.setObjectName("folderTree")
+        tree.setHeaderHidden(True)
+        tree.setFrameShape(QFrame.NoFrame)
+        tree.setIndentation(14)
+        tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        tree.setMaximumHeight(260)
+        tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        tree.setFocusPolicy(Qt.NoFocus)
+        self._tree_style = NoFocusRectStyle("Fusion")
+        self._tree_style.setParent(self)
+        tree.setStyle(self._tree_style)
+        tree.itemExpanded.connect(self._on_tree_expanded)
+        tree.itemClicked.connect(self._on_tree_clicked)
+        tree.setVisible(False)
+        return tree
+
+    def _toggle_folder_tree_arrow(self, open_: bool):
+        self._tree_toggle.setArrowType(Qt.DownArrow if open_ else Qt.RightArrow)
+
+    def _toggle_folder_tree(self, open_: bool):
+        self._tree_open = open_
+        self._toggle_folder_tree_arrow(open_)
+        self.folder_tree.setVisible(open_)
+        if open_ and self.cli:
+            self._load_tree_roots()
+
+    def _load_tree_roots(self):
+        self._start_worker(
+            self.cli.list_dir,
+            MY_FILES_ROOT,
+            on_finished=self._fill_tree_roots,
+            on_error=lambda _msg: None,
+        )
+
+    def _fill_tree_roots(self, items):
+        self.folder_tree.clear()
+        for item in sorted((i for i in items if i.is_folder), key=lambda i: i.name.lower()):
+            self._add_tree_node(self.folder_tree, f"{MY_FILES_ROOT}/{item.name}", item.name)
+        self._sync_tree_selection()
+
+    def _add_tree_node(self, parent, path: str, name: str):
+        node = QTreeWidgetItem([name])
+        node.setIcon(0, self._row_icons["folder"])
+        node.setData(0, Qt.UserRole, path)
+        # A placeholder child gives the node an expand arrow before its
+        # contents are loaded; it is removed once the children arrive.
+        node.addChild(QTreeWidgetItem([""]))
+        if isinstance(parent, QTreeWidget):
+            parent.addTopLevelItem(node)
+        else:
+            parent.addChild(node)
+
+    def _on_tree_expanded(self, node):
+        if node.data(0, Qt.UserRole + 1):
+            return
+        node.setData(0, Qt.UserRole + 1, True)
+        path = node.data(0, Qt.UserRole)
+        self._start_worker(
+            self.cli.list_dir,
+            path,
+            on_finished=lambda items, p=path: self._fill_tree_children(p, items),
+            on_error=lambda _msg, p=path: self._fill_tree_children(p, []),
+        )
+
+    def _fill_tree_children(self, path: str, items):
+        # Look the node up by path at callback time: the tree may have been
+        # rebuilt while the listing was running, and the old node may be gone.
+        node = self._find_tree_item(path)
+        if node is None:
+            return
+        node.takeChildren()
+        for item in sorted((i for i in items if i.is_folder), key=lambda i: i.name.lower()):
+            self._add_tree_node(node, f"{path}/{item.name}", item.name)
+
+    def _find_tree_item(self, path: str):
+        stack = [self.folder_tree.topLevelItem(i) for i in range(self.folder_tree.topLevelItemCount())]
+        while stack:
+            node = stack.pop()
+            if node.data(0, Qt.UserRole) == path:
+                return node
+            stack.extend(node.child(i) for i in range(node.childCount()))
+        return None
+
+    def _on_tree_clicked(self, node, _column):
+        path = node.data(0, Qt.UserRole)
+        if not path:
+            return
+        self.current_root = MY_FILES_ROOT
+        self._apply_root_ui_state(MY_FILES_ROOT)
+        self.navigate_to(path)
+
+    def _sync_tree_selection(self):
+        tree = getattr(self, "folder_tree", None)
+        if tree is None:
+            return
+        node = self._find_tree_item(self.current_path) if self.current_root == MY_FILES_ROOT else None
+        if node is not None:
+            tree.setCurrentItem(node)
+        else:
+            tree.clearSelection()
+
+    def _reload_folder_tree(self):
+        tree = getattr(self, "folder_tree", None)
+        if tree is not None and tree.isVisible() and self.cli:
+            self._load_tree_roots()
+
+    def _tree_open_flag(self) -> bool:
+        return bool(getattr(self, "_tree_open", False))
+
     def _set_view_mode(self, mode: str):
         self.view_stack.setCurrentWidget(self.grid_panel if mode == "grid" else self.table)
+        if hasattr(self, "_settings"):
+            self._settings.setValue("view_mode", "grid" if mode == "grid" else "list")
 
     def _selected_rows(self) -> list[int]:
         if self.view_stack.currentWidget() is self.grid_panel:
@@ -801,6 +952,9 @@ class MainWindow(QMainWindow):
         new_width = self._SIDEBAR_WIDE if sidebar_wide else self._SIDEBAR_NARROW
         if self._sidebar.minimumWidth() != new_width:
             self._sidebar.setFixedWidth(new_width)
+        if hasattr(self, "_tree_toggle"):
+            self._tree_toggle.setVisible(sidebar_wide)
+            self.folder_tree.setVisible(sidebar_wide and self._tree_open_flag())
 
         top_style = (
             Qt.ToolButtonIconOnly
@@ -883,6 +1037,7 @@ class MainWindow(QMainWindow):
         self._update_breadcrumbs()
         self._settings.setValue("last_root", self.current_root)
         self._settings.setValue("last_path", self.current_path)
+        self._sync_tree_selection()
         self.refresh()
 
     def _update_breadcrumbs(self):
@@ -1349,6 +1504,7 @@ class MainWindow(QMainWindow):
         self._size_queue.clear()
         self._folder_sizes = {}
         self._persist_folder_sizes()
+        self._reload_folder_tree()
         self.refresh()
 
     def _on_error(self, message: str):
