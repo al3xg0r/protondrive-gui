@@ -8,7 +8,7 @@ import time
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QEvent, QModelIndex, QSettings, QSize, Qt, QThreadPool, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPalette
+from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QProxyStyle,
@@ -170,10 +170,10 @@ _SIDEBAR_STYLESHEET = """
     QToolButton#newFolderButton:hover { background: #24b563; }
     QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
     QTreeWidget { background: transparent; border: none; outline: none; }
-    QTreeWidget QScrollBar:vertical { background: transparent; width: 8px; margin: 2px 0; }
-    QTreeWidget QScrollBar::handle:vertical { background: transparent; min-height: 24px; border-radius: 4px; }
-    QTreeWidget:hover QScrollBar::handle:vertical { background: palette(mid); }
-    QTreeWidget QScrollBar::add-line:vertical, QTreeWidget QScrollBar::sub-line:vertical { height: 0; }
+    QTreeWidget QScrollBar:vertical { background: transparent; border: none; width: 8px; margin: 2px 0; }
+    QTreeWidget QScrollBar::handle:vertical { background: transparent; border: none; min-height: 24px; border-radius: 4px; }
+    QTreeWidget QScrollBar[hovered="true"]::handle:vertical { background: palette(mid); }
+    QTreeWidget QScrollBar::add-line:vertical, QTreeWidget QScrollBar::sub-line:vertical { height: 0; border: none; background: transparent; }
     QTreeWidget QScrollBar::add-page:vertical, QTreeWidget QScrollBar::sub-page:vertical { background: transparent; }
     QToolButton#treeToggle, QToolButton#treeToggle:checked { background: transparent; padding: 6px 4px; }
     QToolButton#treeToggle:hover { background: palette(alternate-base); }
@@ -299,31 +299,50 @@ class NoFocusRectStyle(QProxyStyle):
         super().drawPrimitive(element, option, painter, widget)
 
 
-class TreeRowStyle(NoFocusRectStyle):
-    """For the sidebar tree only: Qt paints a full-width row background behind
-    the selected item, including the arrow column, which shows as a square
-    strip. Skipping that background lets the item's own rounded highlight be
-    the only thing drawn."""
+class FolderTree(QTreeWidget):
+    """Sidebar folder tree. Its preferred height follows the number of visible
+    folders (capped), and it may shrink to nothing, so the sidebar layout never
+    has to overlap it with the items below. Reporting the size directly avoids
+    layouts keeping a stale maximum height."""
 
-    BRANCH_WIDTH = 14  # matches the tree's indentation: the arrow column
+    MAX_HEIGHT = 260
+
+    def __init__(self):
+        super().__init__()
+        self.preferred_height = 0
+
+    def sizeHint(self):
+        size = super().sizeHint()
+        return QSize(size.width(), min(self.MAX_HEIGHT, self.preferred_height))
+
+    def minimumSizeHint(self):
+        return QSize(0, 0)
+
+
+class TreeRowStyle(NoFocusRectStyle):
+    """For the sidebar tree only. Qt gives the selected item's own rectangle a
+    left edge that moves with nesting depth, and the row primitive only covers
+    the arrow column, so neither alone makes a band across the whole row. This
+    paints one rounded band as wide as the tree for the selected (and hovered)
+    row, like the web app, and leaves the per-item background empty."""
 
     def drawPrimitive(self, element, option, painter, widget=None):
         if element == QStyle.PE_PanelItemViewRow:
+            selected = bool(option.state & QStyle.State_Selected)
+            hovered = bool(option.state & QStyle.State_MouseOver)
+            if selected or hovered:
+                from PySide6.QtCore import QRectF
+                from PySide6.QtGui import QPen
+                width = widget.viewport().width() if widget is not None else option.rect.right()
+                rect = QRectF(0, option.rect.top() + 1, width, option.rect.height() - 2)
+                painter.save()
+                painter.setRenderHint(QPainter.Antialiasing)
+                painter.setPen(QPen(Qt.NoPen))
+                painter.setBrush(option.palette.highlight() if selected else option.palette.alternateBase())
+                painter.drawRoundedRect(rect, 6, 6)
+                painter.restore()
             return
-        if element == QStyle.PE_PanelItemViewItem and option.state & QStyle.State_Selected:
-            # Our own rounded highlight, starting after the arrow column.
-            from PySide6.QtCore import QRectF
-            from PySide6.QtGui import QPen
-            # Start just before the folder icon, wherever it sits (depth varies).
-            icon = self.subElementRect(QStyle.SE_ItemViewItemDecoration, option, widget)
-            left = (icon.left() - 6) if icon.isValid() else option.rect.left() + self.BRANCH_WIDTH
-            rect = QRectF(left, option.rect.top() + 1, option.rect.right() - left - 2, option.rect.height() - 2)
-            painter.save()
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setPen(QPen(Qt.NoPen))
-            painter.setBrush(option.palette.highlight())
-            painter.drawRoundedRect(rect, 5, 5)
-            painter.restore()
+        if element == QStyle.PE_PanelItemViewItem:
             return
         super().drawPrimitive(element, option, painter, widget)
 
@@ -588,6 +607,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(8, 10, 8, 10)
         sidebar_layout.setSpacing(3)
         self._sidebar = sidebar
+        sidebar.installEventFilter(self)
 
         self.new_folder_action = QAction(
             self._stateful_icon(
@@ -847,23 +867,53 @@ class MainWindow(QMainWindow):
     # -- sidebar folder tree ----------------------------------------------------
 
     def _build_folder_tree(self) -> QTreeWidget:
-        tree = QTreeWidget()
+        tree = FolderTree()
         tree.setObjectName("folderTree")
         tree.setHeaderHidden(True)
         tree.setFrameShape(QFrame.NoFrame)
         tree.setIndentation(14)
         tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        tree.setMaximumHeight(260)
+        tree.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         tree.setSelectionMode(QAbstractItemView.SingleSelection)
         tree.setFocusPolicy(Qt.NoFocus)
         self._tree_style = TreeRowStyle("Fusion")
         self._tree_style.setParent(self)
         tree.setStyle(self._tree_style)
+        tree.setMouseTracking(True)
+        tree.viewport().setMouseTracking(True)
+        tree.verticalScrollBar().setProperty("hovered", False)
+        for watched in (tree, tree.viewport(), tree.verticalScrollBar()):
+            watched.installEventFilter(self)
+        if not hasattr(self, "_tree_hover_timer"):
+            self._tree_hover_timer = QTimer(self)
+            self._tree_hover_timer.setSingleShot(True)
+            self._tree_hover_timer.timeout.connect(self._tree_hover_check)
         tree.itemExpanded.connect(self._on_tree_expanded)
         tree.itemClicked.connect(self._on_tree_clicked)
         tree.setVisible(False)
         return tree
+
+    def _set_tree_hovered(self, flag: bool):
+        bar = self.folder_tree.verticalScrollBar()
+        if bool(bar.property("hovered")) == flag:
+            return
+        bar.setProperty("hovered", flag)
+        bar.style().unpolish(bar)
+        bar.style().polish(bar)
+        bar.update()
+
+    def _tree_hover_show(self):
+        self._set_tree_hovered(True)
+        self._tree_hover_timer.start(300)
+
+    def _tree_hover_check(self):
+        tree = self.folder_tree
+        inside = tree.rect().contains(tree.mapFromGlobal(QCursor.pos()))
+        if inside:
+            self._tree_hover_timer.start(300)
+        else:
+            self._set_tree_hovered(False)
 
     def _toggle_folder_tree_arrow(self, open_: bool):
         self._tree_toggle.setArrowType(Qt.DownArrow if open_ else Qt.RightArrow)
@@ -895,7 +945,12 @@ class MainWindow(QMainWindow):
 
     def _add_tree_node(self, parent, path: str, name: str):
         node = QTreeWidgetItem([name])
-        node.setIcon(0, self._row_icons["folder"])
+        base = self._row_icons["folder"]
+        icon = QIcon(base)
+        pixmap = base.pixmap(20, 20)
+        icon.addPixmap(pixmap, QIcon.Selected)
+        icon.addPixmap(pixmap, QIcon.Active)
+        node.setIcon(0, icon)
         node.setData(0, Qt.UserRole, path)
         if isinstance(parent, QTreeWidget):
             parent.addTopLevelItem(node)
@@ -988,7 +1043,29 @@ class MainWindow(QMainWindow):
                 count += 1
                 stack.extend(node.child(i) for i in range(node.childCount()))
         row = tree.sizeHintForRow(0) if tree.topLevelItemCount() else 22
-        tree.setFixedHeight(min(260, count * max(row, 20) + 4) if count else 0)
+        tree.preferred_height = min(FolderTree.MAX_HEIGHT, count * max(row, 20) + 4) if count else 0
+        self._size_folder_tree()
+
+    def _size_folder_tree(self):
+        """Gives the tree the height it wants, but never more than the sidebar
+        has left after everything else. Fixed sizes keep Qt's layout from
+        caching a stale height, and nothing can overlap the items below."""
+        tree = getattr(self, "folder_tree", None)
+        if tree is None or not tree.isVisible():
+            return
+        layout = self._sidebar.layout()
+        others = 0
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item.widget() is tree or item.isEmpty():
+                continue
+            others += item.sizeHint().height()
+        margins = layout.contentsMargins().top() + layout.contentsMargins().bottom()
+        # Qt puts spacing between every item, including the ones that are empty.
+        spacing = layout.spacing() * max(0, layout.count() - 1)
+        room = self._sidebar.height() - margins - spacing - others
+        wanted = getattr(tree, "preferred_height", 0)
+        tree.setFixedHeight(max(0, min(wanted, room)))
 
     def _find_tree_item(self, path: str):
         stack = [self.folder_tree.topLevelItem(i) for i in range(self.folder_tree.topLevelItemCount())]
@@ -1070,6 +1147,14 @@ class MainWindow(QMainWindow):
     # -- keyboard shortcuts -------------------------------------------------------
 
     def eventFilter(self, obj, event):
+        if obj is getattr(self, "_sidebar", None) and event.type() == QEvent.Resize:
+            # The sidebar has its new height now: fit the tree to what is left.
+            self._size_folder_tree()
+        tree = getattr(self, "folder_tree", None)
+        if tree is not None and obj in (tree, tree.viewport(), tree.verticalScrollBar()) and event.type() in (
+            QEvent.Enter, QEvent.HoverEnter, QEvent.HoverMove, QEvent.MouseMove, QEvent.Wheel,
+        ):
+            self._tree_hover_show()
         if event.type() == QEvent.MouseButtonPress and obj in (
             self.table.viewport(),
             self.grid.viewport(),
