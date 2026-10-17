@@ -71,6 +71,13 @@ supports:
   your top-level folders, expand any folder to load its subfolders, click a
   folder to open it. Scrollbar appears when you hover over the tree
 - List or grid view is remembered across launches
+- Folder listings are cached on your computer (`~/.cache/protondrive-gui/`,
+  readable only by you) so that a folder you've opened before appears at once,
+  and the live listing replaces it when it arrives. The cache is cleared when
+  you log out, and My files entries are dropped after any change made in the
+  app. Changes made elsewhere (another device, the web app) show up after the
+  live listing loads. The cache stores file and folder names, so delete that
+  directory if you don't want them kept on disk.
 - Folder sizes in the Size column are counted in the background (one folder at
   a time) and remembered between launches. They're refreshed after an hour, or
   immediately after any change made in the app

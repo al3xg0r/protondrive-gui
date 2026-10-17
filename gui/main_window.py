@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import os
 import time
 from pathlib import Path, PurePosixPath
 
@@ -42,6 +43,7 @@ from PySide6.QtWidgets import (
 
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
 from . import theme, updates
+from .listing_cache import ListingCache
 from .folder_picker import FolderPickerDialog
 from .icons import DRAWERS, make_icon, make_stateful_icon
 from .workers import Worker
@@ -387,6 +389,9 @@ class MainWindow(QMainWindow):
         self._settings = QSettings(
             QSettings.IniFormat, QSettings.UserScope, "protondrive-gui", "ProtonDriveGUI"
         )
+        cache_root = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+        cache_dir = cache_root / "protondrive-gui"
+        self.listing_cache = ListingCache(cache_dir / "listings.json")
         self._folder_sizes: dict[str, list] = self._load_folder_sizes()
         self._size_queue: list[str] = []
         self._size_busy = False
@@ -1547,16 +1552,31 @@ class MainWindow(QMainWindow):
 
     # -- data loading --------------------------------------------------------
 
+    def _listing_key(self) -> str:
+        return f"{self.current_root}|{self.current_path}"
+
     def refresh(self):
         if not self.cli:
             return
-        self.statusBar().showMessage(f"Loading {self.current_path} \u2026")
-        if self.current_root == PHOTOS_ROOT:
-            self._start_worker(self.cli.list_photos, on_finished=self._on_list_loaded)
+        key = self._listing_key()
+        cached = self.listing_cache.get(key)
+        if cached is not None:
+            # Show the last known listing straight away; the live one follows.
+            self._on_list_loaded(cached[0])
+            self.statusBar().showMessage(f"Updating {self.current_path} \u2026")
         else:
-            self._start_worker(
-                self.cli.list_dir, self.current_path, on_finished=self._on_list_loaded
-            )
+            self.statusBar().showMessage(f"Loading {self.current_path} \u2026")
+        on_live = lambda items, k=key: self._on_live_listing(k, items)
+        if self.current_root == PHOTOS_ROOT:
+            self._start_worker(self.cli.list_photos, on_finished=on_live)
+        else:
+            self._start_worker(self.cli.list_dir, self.current_path, on_finished=on_live)
+
+    def _on_live_listing(self, key: str, items: list[DriveItem]):
+        self.listing_cache.put(key, items)
+        # Ignore a slow answer for a folder the user has already left.
+        if key == self._listing_key():
+            self._on_list_loaded(items)
 
     def _on_list_loaded(self, items: list[DriveItem]):
         if self.account_email is None:
@@ -1726,6 +1746,7 @@ class MainWindow(QMainWindow):
         self._tree_children = {}
         self._probe_queue.clear()
         self._probe_gen += 1
+        self.listing_cache.drop_prefix(f"{MY_FILES_ROOT}|")
         self._reload_folder_tree()
         self.refresh()
 
@@ -1785,6 +1806,7 @@ class MainWindow(QMainWindow):
         self._start_worker(self.cli.auth_login, on_finished=_done, on_error=_err)
 
     def logout(self):
+        self.listing_cache.clear()
         if not self.cli:
             return
         self.statusBar().showMessage("Logging out \u2026")
