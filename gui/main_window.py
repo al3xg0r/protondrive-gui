@@ -320,25 +320,29 @@ class FolderTree(QTreeWidget):
 
 
 class TreeRowStyle(NoFocusRectStyle):
-    """For the sidebar tree only. Qt gives the selected item's own rectangle a
-    left edge that moves with nesting depth, and the row primitive only covers
-    the arrow column, so neither alone makes a band across the whole row. This
-    paints one rounded band as wide as the tree for the selected (and hovered)
-    row, like the web app, and leaves the per-item background empty."""
+    """For the sidebar tree only. Paints one rounded band across the full width
+    of the selected row, like the web app, with the same inset on both sides.
+    Hover is not highlighted, so a selected row never gets a second band."""
+
+    INSET_X = 4
+    INSET_Y = 2
 
     def drawPrimitive(self, element, option, painter, widget=None):
         if element == QStyle.PE_PanelItemViewRow:
-            selected = bool(option.state & QStyle.State_Selected)
-            hovered = bool(option.state & QStyle.State_MouseOver)
-            if selected or hovered:
+            if option.state & QStyle.State_Selected:
                 from PySide6.QtCore import QRectF
                 from PySide6.QtGui import QPen
                 width = widget.viewport().width() if widget is not None else option.rect.right()
-                rect = QRectF(0, option.rect.top() + 1, width, option.rect.height() - 2)
+                rect = QRectF(
+                    self.INSET_X,
+                    option.rect.top() + self.INSET_Y,
+                    width - 2 * self.INSET_X,
+                    option.rect.height() - 2 * self.INSET_Y,
+                )
                 painter.save()
                 painter.setRenderHint(QPainter.Antialiasing)
                 painter.setPen(QPen(Qt.NoPen))
-                painter.setBrush(option.palette.highlight() if selected else option.palette.alternateBase())
+                painter.setBrush(option.palette.highlight())
                 painter.drawRoundedRect(rect, 6, 6)
                 painter.restore()
             return
@@ -532,6 +536,7 @@ class MainWindow(QMainWindow):
         self.removeToolBar(self._toolbar)
         self._sidebar_buttons = []
         self._build_ui()
+        self._apply_responsive_layout()
         self._apply_root_ui_state(saved_root)
         self._set_auth_ui(self.is_logged_in)
         # Keep the list/grid choice across a theme switch — the rebuild
@@ -943,6 +948,8 @@ class MainWindow(QMainWindow):
         self._fit_tree_height()
         self._sync_tree_selection()
 
+    TREE_ROW_HEIGHT = 28
+
     def _add_tree_node(self, parent, path: str, name: str):
         node = QTreeWidgetItem([name])
         base = self._row_icons["folder"]
@@ -951,6 +958,7 @@ class MainWindow(QMainWindow):
         icon.addPixmap(pixmap, QIcon.Selected)
         icon.addPixmap(pixmap, QIcon.Active)
         node.setIcon(0, icon)
+        node.setSizeHint(0, QSize(0, self.TREE_ROW_HEIGHT))
         node.setData(0, Qt.UserRole, path)
         if isinstance(parent, QTreeWidget):
             parent.addTopLevelItem(node)
@@ -1123,7 +1131,13 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._apply_responsive_layout()
 
+    def _apply_responsive_layout(self):
+        """Sidebar width, button styles and toolbar mode follow the window
+        width. Kept separate from resizeEvent because the UI is also rebuilt
+        without any resize (theme switch), and the new widgets need these
+        applied straight away or the sidebar grows to fit its widest item."""
         sidebar_wide = self.width() >= self._SIDEBAR_TEXT_THRESHOLD
         sidebar_style = Qt.ToolButtonTextBesideIcon if sidebar_wide else Qt.ToolButtonIconOnly
         for btn in self._sidebar_buttons:

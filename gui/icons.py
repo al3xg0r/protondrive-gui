@@ -22,7 +22,7 @@ def render_pixmap(draw_fn, color: QColor, size: int = 20) -> QPixmap:
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(color, max(1.4, size / 11))
+    pen = QPen(color, max(1.7, size / 9))
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     painter.setPen(pen)
