@@ -499,8 +499,15 @@ class MainWindow(QMainWindow):
 
     # -- icons ------------------------------------------------------------
 
+    def _applied_palette(self) -> QPalette:
+        """The palette that is actually in effect. self.palette() can still hold
+        the desktop's palette while the window is being built at startup (it only
+        catches up once the window is shown), and icons bake their colour in when
+        they are drawn — so a light theme on a dark desktop got pale icons."""
+        return QApplication.palette()
+
     def _icon(self, name: str, size: int = 20, color: QColor | None = None) -> QIcon:
-        color = color or self.palette().color(QPalette.WindowText)
+        color = color or self._applied_palette().color(QPalette.WindowText)
         return make_icon(DRAWERS[name], color, size)
 
     def _stateful_icon(
@@ -511,7 +518,7 @@ class MainWindow(QMainWindow):
         checked_color: QColor | None = None,
         disabled_color: QColor | None = None,
     ) -> QIcon:
-        normal_color = normal_color or self.palette().color(QPalette.WindowText)
+        normal_color = normal_color or self._applied_palette().color(QPalette.WindowText)
         return make_stateful_icon(DRAWERS[name], size, normal_color, checked_color, disabled_color)
 
     # -- theme ------------------------------------------------------------
@@ -623,7 +630,7 @@ class MainWindow(QMainWindow):
             self._stateful_icon(
                 "new_folder",
                 normal_color=QColor("#ffffff"),
-                disabled_color=self.palette().color(QPalette.Disabled, QPalette.WindowText),
+                disabled_color=self._applied_palette().color(QPalette.Disabled, QPalette.WindowText),
             ),
             "New folder",
             self,
@@ -632,7 +639,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self._sidebar_button(self.new_folder_action, "newFolderButton"))
         sidebar_layout.addSpacing(10)
 
-        highlighted_text = self.palette().color(QPalette.HighlightedText)
+        highlighted_text = self._applied_palette().color(QPalette.HighlightedText)
         self.root_actions: dict[str, QAction] = {}
         for root in (MY_FILES_ROOT, PHOTOS_ROOT, TRASH_ROOT):
             action = QAction(
