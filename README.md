@@ -71,6 +71,11 @@ supports:
   your top-level folders, expand any folder to load its subfolders, click a
   folder to open it. Scrollbar appears when you hover over the tree
 - List or grid view is remembered across launches
+- Folder colours: right-click a folder in My files → Folder colour, pick one
+  (or Default). Colours are stored only on this computer, in
+  `~/.config/protondrive-gui/folder_colors.json`, keyed by each folder's id, so
+  they survive renames and moves. They don't show in the web app or on other
+  devices, because the CLI has no way to set a folder colour.
 - Folder listings are cached on your computer (`~/.cache/protondrive-gui/`,
   readable only by you) so that a folder you've opened before appears at once,
   and the live listing replaces it when it arrives. The cache is cleared when

@@ -9,7 +9,7 @@ import time
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QEvent, QModelIndex, QSettings, QSize, Qt, QThreadPool, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QIcon, QPainter, QPalette
+from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QProxyStyle,
@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 
 from .cli import DriveItem, ProtonDriveCLI, ProtonDriveNotFoundError
 from . import theme, updates
+from .folder_colors import FOLDER_COLORS, FolderColorStore
 from .listing_cache import ListingCache
 from .folder_picker import FolderPickerDialog
 from .icons import DRAWERS, make_icon, make_stateful_icon
@@ -321,6 +322,13 @@ class FolderTree(QTreeWidget):
         return QSize(0, 0)
 
 
+class _ColourSubmenu:
+    """Marks a context-menu entry that opens a list of colour choices."""
+
+    def __init__(self, choices):
+        self.choices = choices
+
+
 class TreeRowStyle(NoFocusRectStyle):
     """For the sidebar tree only. Paints one rounded band across the full width
     of the selected row, like the web app, with the same inset on both sides.
@@ -392,6 +400,10 @@ class MainWindow(QMainWindow):
         cache_root = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
         cache_dir = cache_root / "protondrive-gui"
         self.listing_cache = ListingCache(cache_dir / "listings.json")
+        config_root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        self.folder_colors = FolderColorStore(config_root / "protondrive-gui" / "folder_colors.json")
+        self._path_uid: dict[str, str] = {}
+        self._color_icons: dict = {}
         self._folder_sizes: dict[str, list] = self._load_folder_sizes()
         self._size_queue: list[str] = []
         self._size_busy = False
@@ -505,6 +517,35 @@ class MainWindow(QMainWindow):
         catches up once the window is shown), and icons bake their colour in when
         they are drawn — so a light theme on a dark desktop got pale icons."""
         return QApplication.palette()
+
+    def _folder_icon(self, uid: str | None, size: int) -> QIcon:
+        """Folder icon in the folder's chosen colour, or the default amber one."""
+        name = self.folder_colors.get(uid)
+        if name is None:
+            return self._row_icons["folder"] if size == 20 else self._grid_icons["folder"]
+        key = (name, size)
+        if key not in self._color_icons:
+            self._color_icons[key] = self._icon("folder", size=size, color=QColor(FOLDER_COLORS[name]))
+        return self._color_icons[key]
+
+    def _tree_folder_icon(self, uid: str | None) -> QIcon:
+        base = self._folder_icon(uid, 20)
+        icon = QIcon(base)
+        pixmap = base.pixmap(20, 20)
+        icon.addPixmap(pixmap, QIcon.Selected)
+        icon.addPixmap(pixmap, QIcon.Active)
+        return icon
+
+    def _swatch(self, hex_colour: str | None) -> QIcon:
+        pixmap = QPixmap(14, 14)
+        pixmap.fill(QColor(hex_colour) if hex_colour else Qt.transparent)
+        return QIcon(pixmap)
+
+    def _record_uids(self, parent_path: str, items):
+        for item in items:
+            uid = item.raw.get("uid") if item.raw else None
+            if item.is_folder and uid:
+                self._path_uid[f"{parent_path}/{item.name}"] = uid
 
     def _icon(self, name: str, size: int = 20, color: QColor | None = None) -> QIcon:
         color = color or self._applied_palette().color(QPalette.WindowText)
@@ -952,6 +993,7 @@ class MainWindow(QMainWindow):
         )
 
     def _fill_tree_roots(self, items):
+        self._record_uids(MY_FILES_ROOT, items)
         names = sorted((i.name for i in items if i.is_folder), key=str.lower)
         self._tree_children[MY_FILES_ROOT] = names
         self.folder_tree.clear()
@@ -964,12 +1006,7 @@ class MainWindow(QMainWindow):
 
     def _add_tree_node(self, parent, path: str, name: str):
         node = QTreeWidgetItem([name])
-        base = self._row_icons["folder"]
-        icon = QIcon(base)
-        pixmap = base.pixmap(20, 20)
-        icon.addPixmap(pixmap, QIcon.Selected)
-        icon.addPixmap(pixmap, QIcon.Active)
-        node.setIcon(0, icon)
+        node.setIcon(0, self._tree_folder_icon(self._path_uid.get(path)))
         node.setSizeHint(0, QSize(0, self.TREE_ROW_HEIGHT))
         node.setData(0, Qt.UserRole, path)
         if isinstance(parent, QTreeWidget):
@@ -1016,6 +1053,7 @@ class MainWindow(QMainWindow):
     def _on_subfolder_probe(self, path: str, gen: int, items):
         self._probe_busy = False
         if gen == self._probe_gen and items is not None:
+            self._record_uids(path, items)
             self._tree_children[path] = sorted((i.name for i in items if i.is_folder), key=str.lower)
             node = self._find_tree_item(path)
             if node is not None:
@@ -1035,8 +1073,9 @@ class MainWindow(QMainWindow):
             self._start_worker(
                 self.cli.list_dir,
                 path,
-                on_finished=lambda items, p=path: self._fill_tree_children(
-                    p, sorted((i.name for i in items if i.is_folder), key=str.lower)
+                on_finished=lambda items, p=path: (
+                    self._record_uids(p, items),
+                    self._fill_tree_children(p, sorted((i.name for i in items if i.is_folder), key=str.lower)),
                 ),
                 on_error=lambda _msg, p=path: self._fill_tree_children(p, []),
             )
@@ -1345,6 +1384,8 @@ class MainWindow(QMainWindow):
                 None,
                 ("Move to folder\u2026", "folder", lambda: self._move_selected(), True),
                 ("Make a copy", "file", lambda: self._copy_selected(), True),
+                *([("Folder colour", "folder", _ColourSubmenu(self._colour_choices()), True)]
+                  if self.items and self.items[row].is_folder else []),
                 ("Rename\u2026", "rename", lambda: self._rename_item(row), True),
                 information,
                 None,
@@ -1361,6 +1402,13 @@ class MainWindow(QMainWindow):
                 menu.addSeparator()
                 continue
             label, icon_key, handler, enabled = entry
+            if isinstance(handler, _ColourSubmenu):
+                sub = menu.addMenu(self._icon(icon_key, size=16), label)
+                for choice_label, colour_name in handler.choices:
+                    hex_colour = FOLDER_COLORS.get(colour_name) if colour_name else None
+                    act = sub.addAction(self._swatch(hex_colour), choice_label)
+                    bound.append((act, lambda n=colour_name: self._set_folder_colour(row, n)))
+                continue
             action = menu.addAction(self._icon(icon_key, size=16), label)
             action.setEnabled(enabled)
             bound.append((action, handler))
@@ -1369,6 +1417,23 @@ class MainWindow(QMainWindow):
             if chosen is action and handler is not None:
                 handler()
                 return
+
+    def _colour_choices(self):
+        return [("Default", None)] + [(name.capitalize(), name) for name in FOLDER_COLORS]
+
+    def _set_folder_colour(self, row: int, colour_name: str | None):
+        item = self.items[row]
+        uid = item.raw.get("uid") if item.raw else None
+        if not uid:
+            self.statusBar().showMessage("This folder has no id to attach a colour to", 4000)
+            return
+        self.folder_colors.set(uid, colour_name)
+        self._on_list_loaded(self.items)
+        node = self._find_tree_item(f"{self.current_path.rstrip('/')}/{item.name}")
+        if node is not None:
+            node.setIcon(0, self._tree_folder_icon(uid))
+        label = colour_name.capitalize() if colour_name else "default"
+        self.statusBar().showMessage(f"Folder colour set to {label}", 3000)
 
     def _run_for_dialog(self, fn, *args, on_finished=None, on_error=None):
         return self._start_worker(fn, *args, on_finished=on_finished, on_error=on_error)
@@ -1589,6 +1654,8 @@ class MainWindow(QMainWindow):
         if self.account_email is None:
             self._maybe_capture_account_email(items)
         self._queue_folder_sizes(items)
+        if self.current_root != PHOTOS_ROOT:
+            self._record_uids(self.current_path.rstrip('/'), items)
 
         if self.current_root == PHOTOS_ROOT:
             # Flat, most-recent-first — there's no folder hierarchy here.
@@ -1620,6 +1687,10 @@ class MainWindow(QMainWindow):
 
             table_icon = self._row_icons[icon_key]
             grid_icon = self._grid_icons[icon_key]
+            if item.is_folder:
+                uid = item.raw.get("uid") if item.raw else None
+                table_icon = self._folder_icon(uid, 20)
+                grid_icon = self._folder_icon(uid, 48)
 
             name_item = QTableWidgetItem(item.name)
             name_item.setIcon(table_icon)
