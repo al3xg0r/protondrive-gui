@@ -304,7 +304,19 @@ def draw_theme(p: QPainter, s: int):
     p.setBrush(Qt.NoBrush)
 
 
+def draw_chevron_right(p: QPainter, s: int):
+    _line(p, s * 0.36, s * 0.26, s * 0.64, s * 0.5)
+    _line(p, s * 0.64, s * 0.5, s * 0.36, s * 0.74)
+
+
+def draw_chevron_down(p: QPainter, s: int):
+    _line(p, s * 0.26, s * 0.36, s * 0.5, s * 0.64)
+    _line(p, s * 0.5, s * 0.64, s * 0.74, s * 0.36)
+
+
 DRAWERS = {
+    "chevron_right": draw_chevron_right,
+    "chevron_down": draw_chevron_down,
     "back": draw_back,
     "refresh": draw_refresh,
     "folder": draw_folder,

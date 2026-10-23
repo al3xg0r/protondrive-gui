@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import os
+import shutil
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
@@ -176,6 +178,10 @@ _SIDEBAR_STYLESHEET = """
     QTreeWidget QScrollBar:vertical { background: transparent; border: none; width: 8px; margin: 2px 0; }
     QTreeWidget QScrollBar::handle:vertical { background: transparent; border: none; min-height: 24px; border-radius: 4px; }
     QTreeWidget QScrollBar[hovered="true"]::handle:vertical { background: palette(mid); }
+    QFrame#rootRow { background: transparent; border-radius: 6px; }
+    QFrame#rootRow[selected="true"] { background: palette(highlight); }
+    QToolButton#rootMain, QToolButton#rootMain:checked, QToolButton#rootMain:hover { background: transparent; }
+    QFrame#rootRow[selected="true"] QToolButton#rootMain { color: palette(highlighted-text); }
     QTreeWidget QScrollBar::add-line:vertical, QTreeWidget QScrollBar::sub-line:vertical { height: 0; border: none; background: transparent; }
     QTreeWidget QScrollBar::add-page:vertical, QTreeWidget QScrollBar::sub-page:vertical { background: transparent; }
     QToolButton#treeToggle, QToolButton#treeToggle:checked { background: transparent; padding: 6px 4px; }
@@ -403,6 +409,7 @@ class MainWindow(QMainWindow):
         config_root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
         self.folder_colors = FolderColorStore(config_root / "protondrive-gui" / "folder_colors.json")
         self._path_uid: dict[str, str] = {}
+        self._clipboard = None
         self._color_icons: dict = {}
         self._folder_sizes: dict[str, list] = self._load_folder_sizes()
         self._size_queue: list[str] = []
@@ -692,8 +699,12 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked=False, r=root: self.switch_root(r))
             button = self._sidebar_button(action)
             if root == MY_FILES_ROOT:
-                row = QHBoxLayout()
+                self._my_files_row = QFrame()
+                self._my_files_row.setObjectName("rootRow")
+                row = QHBoxLayout(self._my_files_row)
+                row.setContentsMargins(0, 0, 0, 0)
                 row.setSpacing(0)
+                button.setObjectName("rootMain")
                 row.addWidget(button, 1)
                 self._tree_toggle = QToolButton()
                 self._tree_toggle.setObjectName("treeToggle")
@@ -704,10 +715,11 @@ class MainWindow(QMainWindow):
                 self._tree_toggle.setChecked(getattr(self, "_tree_open", False))
                 self._tree_toggle.toggled.connect(self._toggle_folder_tree)
                 row.addWidget(self._tree_toggle)
-                sidebar_layout.addLayout(row)
+                sidebar_layout.addWidget(self._my_files_row)
                 self.folder_tree = self._build_folder_tree()
                 sidebar_layout.addWidget(self.folder_tree)
                 self._toggle_folder_tree_arrow(getattr(self, "_tree_open", False))
+                action.toggled.connect(lambda _=False: self._sync_my_files_row())
                 if getattr(self, "_tree_open", False) and self.cli:
                     self.folder_tree.setVisible(True)
                     self._load_tree_roots()
@@ -974,7 +986,22 @@ class MainWindow(QMainWindow):
             self._set_tree_hovered(False)
 
     def _toggle_folder_tree_arrow(self, open_: bool):
-        self._tree_toggle.setArrowType(Qt.DownArrow if open_ else Qt.RightArrow)
+        self._sync_my_files_row()
+
+    def _sync_my_files_row(self):
+        """The row is highlighted when My files is the current section, and the
+        arrow sits inside that highlight, drawn in the matching text colour."""
+        if not hasattr(self, "_tree_toggle") or not hasattr(self, "_my_files_row"):
+            return
+        my_action = self.root_actions.get(MY_FILES_ROOT)
+        selected = bool(my_action and my_action.isChecked())
+        self._my_files_row.setProperty("selected", selected)
+        self._my_files_row.style().unpolish(self._my_files_row)
+        self._my_files_row.style().polish(self._my_files_row)
+        role = QPalette.HighlightedText if selected else QPalette.WindowText
+        colour = self._applied_palette().color(role)
+        name = "chevron_down" if self._tree_open_flag() else "chevron_right"
+        self._tree_toggle.setIcon(self._icon(name, size=14, color=colour))
 
     def _toggle_folder_tree(self, open_: bool):
         self._tree_open = open_
@@ -1233,6 +1260,18 @@ class MainWindow(QMainWindow):
             return False
         if (
             event.type() == QEvent.KeyPress
+            and obj in (self.table, self.grid)
+            and self.current_root == MY_FILES_ROOT
+            and event.modifiers() & Qt.ControlModifier
+            and event.key() in (Qt.Key_C, Qt.Key_X, Qt.Key_V)
+        ):
+            if event.key() == Qt.Key_V:
+                self._paste()
+            elif self._selected_rows():
+                self._copy_or_cut_selected(event.key() == Qt.Key_X)
+            return True
+        if (
+            event.type() == QEvent.KeyPress
             and event.key() == Qt.Key_Delete
             and obj in (self.table, self.grid)
             and self.current_root == MY_FILES_ROOT
@@ -1344,6 +1383,7 @@ class MainWindow(QMainWindow):
     def _show_context_menu_table(self, pos):
         index = self.table.indexAt(pos)
         if not index.isValid():
+            self._open_background_menu(self.table.viewport().mapToGlobal(pos))
             return
         row = index.row()
         if row not in self._selected_rows():
@@ -1353,6 +1393,7 @@ class MainWindow(QMainWindow):
     def _show_context_menu_grid(self, pos):
         item = self.grid.itemAt(pos)
         if item is None:
+            self._open_background_menu(self.grid.viewport().mapToGlobal(pos))
             return
         row = self.grid.row(item)
         if row not in self._selected_rows():
@@ -1386,6 +1427,8 @@ class MainWindow(QMainWindow):
                 ("Make a copy", "file", lambda: self._copy_selected(), True),
                 *([("Folder colour", "folder", _ColourSubmenu(self._colour_choices()), True)]
                   if self.items and self.items[row].is_folder else []),
+                ("Copy", "file", lambda: self._copy_or_cut_selected(False), True),
+                ("Cut", "file", lambda: self._copy_or_cut_selected(True), True),
                 ("Rename\u2026", "rename", lambda: self._rename_item(row), True),
                 information,
                 None,
@@ -1417,6 +1460,103 @@ class MainWindow(QMainWindow):
             if chosen is action and handler is not None:
                 handler()
                 return
+
+    def _open_background_menu(self, global_pos):
+        if self.current_root != MY_FILES_ROOT or not self.cli:
+            return
+        menu = QMenu(self)
+        new_folder = menu.addAction(self._icon("new_folder", size=16), "New folder\u2026")
+        new_file = menu.addAction(self._icon("file", size=16), "New file\u2026")
+        menu.addSeparator()
+        paste = menu.addAction(self._icon("file", size=16), "Paste")
+        paste.setEnabled(self._clipboard is not None)
+        chosen = menu.exec(global_pos)
+        if chosen is new_folder:
+            self.create_folder()
+        elif chosen is new_file:
+            self._new_file()
+        elif chosen is paste:
+            self._paste()
+
+    def _copy_or_cut_selected(self, cut: bool):
+        rows = self._selected_rows()
+        if not rows:
+            return
+        base = self.current_path.rstrip("/")
+        paths = [f"{base}/{self.items[r].name}" for r in rows]
+        self._clipboard = ("cut" if cut else "copy", paths)
+        verb = "Cut" if cut else "Copied"
+        self.statusBar().showMessage(f"{verb} {len(paths)} item(s)", 3000)
+
+    @staticmethod
+    def _unique_name(name: str, taken: set) -> str:
+        if name not in taken:
+            return name
+        p = PurePosixPath(name)
+        k = 1
+        while True:
+            candidate = f"{p.stem} (copy){p.suffix}" if k == 1 else f"{p.stem} (copy {k}){p.suffix}"
+            if candidate not in taken:
+                return candidate
+            k += 1
+
+    def _paste(self):
+        if self._clipboard is None or not self.cli or self.current_root != MY_FILES_ROOT:
+            return
+        mode, paths = self._clipboard
+        target = self.current_path.rstrip("/")
+        for src in paths:
+            if target == src or target.startswith(src + "/"):
+                QMessageBox.warning(self, "Paste", "A folder can't be pasted into itself.")
+                return
+        names = [PurePosixPath(p).name for p in paths]
+        existing = {i.name for i in self.items}
+        if mode == "cut":
+            if any(PurePosixPath(p).parent.as_posix() == target for p in paths):
+                return  # already in this folder
+            clashes = [n for n in names if n in existing]
+            if clashes:
+                QMessageBox.warning(self, "Paste", "Already in this folder: " + ", ".join(clashes))
+                return
+
+            def moved(_):
+                self._clipboard = None
+                self._refresh_after_change()
+
+            self.statusBar().showMessage(f"Moving {len(paths)} item(s) \u2026")
+            self._start_worker(self.cli.move, paths, target, on_finished=moved)
+        else:
+            taken = set(existing)
+            pairs = []
+            for src, name in zip(paths, names):
+                new_name = self._unique_name(name, taken)
+                taken.add(new_name)
+                pairs.append((src, new_name))
+            self.statusBar().showMessage(f"Copying {len(pairs)} item(s) \u2026")
+            self._start_worker(self.cli.copy_each, pairs, target,
+                               on_finished=lambda _: self._refresh_after_change())
+
+    def _new_file(self):
+        name, ok = QInputDialog.getText(self, "New file", "File name:", text="New file.txt")
+        name = name.strip()
+        if not ok or not name or "/" in name or not self.cli:
+            return
+        # The CLI has no "create empty file" command, so an empty local file is
+        # uploaded under the chosen name, then the temporary copy is removed.
+        tmpdir = Path(tempfile.mkdtemp(prefix="protondrive-new-"))
+        tmp = tmpdir / name
+        tmp.write_bytes(b"")
+        folder = self.current_path.rstrip("/") or MY_FILES_ROOT
+
+        def cleanup():
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+        self.statusBar().showMessage(f"Creating {name} \u2026")
+        self._start_worker(
+            self.cli.upload, [str(tmp)], folder,
+            on_finished=lambda _: (cleanup(), self._refresh_after_change()),
+            on_error=lambda msg: (cleanup(), self._on_error(msg)),
+        )
 
     def _colour_choices(self):
         return [("Default", None)] + [(name.capitalize(), name) for name in FOLDER_COLORS]

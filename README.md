@@ -71,6 +71,11 @@ supports:
   your top-level folders, expand any folder to load its subfolders, click a
   folder to open it. Scrollbar appears when you hover over the tree
 - List or grid view is remembered across launches
+- Right-click on empty space in My files: New folder, New file (uploads an empty
+  file with the name you give, since the CLI has no create-file command), and
+  Paste. Items can be Copied or Cut (right-click, or Ctrl+C / Ctrl+X) and
+  Pasted (Ctrl+V). The clipboard is internal to the app, not the system
+  clipboard. A pasted copy that clashes with an existing name gets " (copy)".
 - Folder colours: right-click a folder in My files → Folder colour, pick one
   (or Default). Colours are stored only on this computer, in
   `~/.config/protondrive-gui/folder_colors.json`, keyed by each folder's id, so
