@@ -185,7 +185,7 @@ _SIDEBAR_STYLESHEET = """
     QTreeWidget QScrollBar::add-line:vertical, QTreeWidget QScrollBar::sub-line:vertical { height: 0; border: none; background: transparent; }
     QTreeWidget QScrollBar::add-page:vertical, QTreeWidget QScrollBar::sub-page:vertical { background: transparent; }
     QToolButton#treeToggle, QToolButton#treeToggle:checked { background: transparent; padding: 6px 4px; }
-    QToolButton#treeToggle:hover { background: palette(alternate-base); }
+    QToolButton#treeToggle:hover { background: transparent; }
     QLabel#accountLabel {
         color: palette(text);
         font-size: 11px;
@@ -616,6 +616,7 @@ class MainWindow(QMainWindow):
         btn.setAutoRaise(True)
         btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        btn.setCursor(Qt.PointingHandCursor)
         if object_name:
             btn.setObjectName(object_name)
         self._sidebar_buttons.append(btn)
@@ -711,7 +712,7 @@ class MainWindow(QMainWindow):
                 self._tree_toggle.setFixedWidth(26)
                 self._tree_toggle.setAutoRaise(True)
                 self._tree_toggle.setCheckable(True)
-                self._tree_toggle.setToolTip("Show folders")
+                self._tree_toggle.setCursor(Qt.PointingHandCursor)
                 self._tree_toggle.setChecked(getattr(self, "_tree_open", False))
                 self._tree_toggle.toggled.connect(self._toggle_folder_tree)
                 row.addWidget(self._tree_toggle)
@@ -1002,6 +1003,7 @@ class MainWindow(QMainWindow):
         colour = self._applied_palette().color(role)
         name = "chevron_down" if self._tree_open_flag() else "chevron_right"
         self._tree_toggle.setIcon(self._icon(name, size=14, color=colour))
+        self._tree_toggle.setToolTip("Hide folders" if self._tree_open_flag() else "Show folders")
 
     def _toggle_folder_tree(self, open_: bool):
         self._tree_open = open_
