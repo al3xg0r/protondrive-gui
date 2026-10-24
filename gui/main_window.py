@@ -181,7 +181,7 @@ _SIDEBAR_STYLESHEET = """
     QFrame#rootRow { background: transparent; border-radius: 6px; }
     QFrame#rootRow[selected="true"] { background: palette(highlight); }
     QToolButton#rootMain, QToolButton#rootMain:checked, QToolButton#rootMain:hover { background: transparent; }
-    QFrame#rootRow[selected="true"] QToolButton#rootMain { color: palette(highlighted-text); }
+    QToolButton#rootMain[selected="true"] { color: palette(highlighted-text); }
     QTreeWidget QScrollBar::add-line:vertical, QTreeWidget QScrollBar::sub-line:vertical { height: 0; border: none; background: transparent; }
     QTreeWidget QScrollBar::add-page:vertical, QTreeWidget QScrollBar::sub-page:vertical { background: transparent; }
     QToolButton#treeToggle, QToolButton#treeToggle:checked { background: transparent; padding: 6px 4px; }
@@ -706,6 +706,7 @@ class MainWindow(QMainWindow):
                 row.setContentsMargins(0, 0, 0, 0)
                 row.setSpacing(0)
                 button.setObjectName("rootMain")
+                self._my_files_button = button
                 row.addWidget(button, 1)
                 self._tree_toggle = QToolButton()
                 self._tree_toggle.setObjectName("treeToggle")
@@ -996,9 +997,13 @@ class MainWindow(QMainWindow):
             return
         my_action = self.root_actions.get(MY_FILES_ROOT)
         selected = bool(my_action and my_action.isChecked())
-        self._my_files_row.setProperty("selected", selected)
-        self._my_files_row.style().unpolish(self._my_files_row)
-        self._my_files_row.style().polish(self._my_files_row)
+        # The property goes on the button itself as well as the row: Qt does not
+        # re-evaluate a child's style when only an ancestor's property changes,
+        # which left the label white after the highlight had gone.
+        for widget in (self._my_files_row, self._my_files_button):
+            widget.setProperty("selected", selected)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
         role = QPalette.HighlightedText if selected else QPalette.WindowText
         colour = self._applied_palette().color(role)
         name = "chevron_down" if self._tree_open_flag() else "chevron_right"
