@@ -246,6 +246,7 @@ APP_STYLESHEET = """
         border-radius: 5px;
         margin: 1px;
     }
+    QMenu::icon { padding-left: 6px; }
     QMenu::item:selected {
         background: palette(highlight);
         color: palette(highlighted-text);
@@ -340,7 +341,8 @@ class TreeRowStyle(NoFocusRectStyle):
     of the selected row, like the web app, with the same inset on both sides.
     Hover is not highlighted, so a selected row never gets a second band."""
 
-    INSET_X = 4
+    INSET_LEFT = 0  # the expand arrow lives in the first few pixels
+    INSET_RIGHT = 4
     INSET_Y = 2
 
     def drawPrimitive(self, element, option, painter, widget=None):
@@ -350,9 +352,9 @@ class TreeRowStyle(NoFocusRectStyle):
                 from PySide6.QtGui import QPen
                 width = widget.viewport().width() if widget is not None else option.rect.right()
                 rect = QRectF(
-                    self.INSET_X,
+                    self.INSET_LEFT,
                     option.rect.top() + self.INSET_Y,
-                    width - 2 * self.INSET_X,
+                    width - self.INSET_LEFT - self.INSET_RIGHT,
                     option.rect.height() - 2 * self.INSET_Y,
                 )
                 painter.save()
