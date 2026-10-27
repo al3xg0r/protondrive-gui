@@ -5,6 +5,7 @@ venv/
 *.egg-info/
 build/
 build-appimage/
+build-deb/
 dist/
 .idea/
 .vscode/

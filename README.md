@@ -186,6 +186,41 @@ This installs `~/.local/share/applications/protondrive-gui.desktop` pointing
 at your venv, so "Proton Drive GUI" shows up in your app launcher/dock like
 any other installed app.
 
+### .deb package (Debian, Ubuntu, Linux Mint)
+
+Download `protondrive-gui_<version>_amd64.deb` (or `arm64`) from the
+[Releases page](../../releases) and open it with your software installer, or:
+
+```bash
+sudo apt install ./protondrive-gui_<version>_amd64.deb
+```
+
+`apt` installs the system libraries it needs on its own. The package contains
+the app with its own Python and PySide6, so it doesn't depend on the PySide6
+version in your distribution. It adds a `protondrive-gui` command, an app-menu
+entry and an icon. Remove it with `sudo apt remove protondrive-gui`; your
+settings (`~/.config/protondrive-gui`) and cache (`~/.cache/protondrive-gui`)
+are left alone.
+
+Things to know:
+
+- It does **not** include Proton's official `proton-drive` command-line client,
+  which still has to be installed separately (`./install.sh` does it, or see
+  <https://proton.me/drive/download>). Without it the app tells you it can't
+  find the CLI.
+- The release packages are built on Ubuntu 22.04, so they need a system at
+  least that recent (Ubuntu 22.04, Debian 12, Linux Mint 21 or newer). The
+  package declares the exact glibc version it needs, and `apt` refuses to
+  install it on an older system rather than leaving you with an app that won't
+  start.
+- There is no apt repository, so `apt upgrade` won't update it: install the
+  newer `.deb` yourself. The About dialog tells you when a newer version is out.
+
+To build one yourself, run `./build-deb.sh` on Debian, Ubuntu or Mint (it needs
+`python3`, `pip` and `dpkg-deb`; set `DEB_MAINTAINER="Name <you@example.com>"`
+to change the contact in the package). The result is
+`dist/protondrive-gui_<version>_<arch>.deb`.
+
 ### AppImage
 
 Prefer a single portable file over a venv? Build one:
@@ -206,7 +241,7 @@ the first time). Built and tested successfully end-to-end while developing
 this feature. Flatpak and Snap are deliberately not offered.
 
 Prebuilt AppImages (`linux/x64` and `linux/arm64`) are attached automatically
-to each GitHub Release from `v1.0.1` onward via
+to each GitHub Release from `v1.0.1` onward, and `.deb` packages from `v1.4.0`, via
 [`.github/workflows/build-appimage.yml`](.github/workflows/build-appimage.yml) —
 grab one from the [Releases page](../../releases) instead of building it
 yourself if you just want to run the app. `x64-baseline` and `musl` variants

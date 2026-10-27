@@ -1,7 +1,8 @@
-name: Build AppImage
+name: Build AppImage and .deb
 
 # Runs on every version tag push (v1.0.0, v1.0.1, ...) and attaches the
-# built AppImages to that tag's GitHub Release as downloadable assets.
+# built AppImages and .deb packages to that tag's GitHub Release as
+# downloadable assets. The file keeps its name so existing links still work.
 #
 # Only linux/x64 and linux/arm64 are built:
 #   - x64-baseline doesn't apply here — that distinction is about the CPU
@@ -57,7 +58,14 @@ jobs:
       - name: Build the AppImage
         run: bash ./build-appimage.sh
 
+      # Built on this (older) Ubuntu on purpose: the package then runs on
+      # anything at least as new, and declares the exact glibc it needs.
+      - name: Build the .deb
+        run: bash ./build-deb.sh
+
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ProtonDriveGUI-*.AppImage
+          files: |
+            dist/ProtonDriveGUI-*.AppImage
+            dist/*.deb
