@@ -2057,8 +2057,7 @@ class MainWindow(QMainWindow):
         if cli_ver and cli_newer:
             cli_line = (
                 f"Proton Drive CLI: v{cli_ver} &nbsp;\u2014&nbsp; "
-                f"New version available: v{cli_newer}. "
-                f'<a href="{updates.CLI_DOWNLOAD_PAGE}">Download</a>'
+                f'<a href="{updates.CLI_DOWNLOAD_PAGE}">New version available: v{cli_newer}</a>'
             )
         elif cli_ver:
             cli_line = f"Proton Drive CLI: v{cli_ver} &nbsp;\u2014&nbsp; You have the latest version."
@@ -2085,6 +2084,10 @@ class MainWindow(QMainWindow):
         if label is not None:
             label.setTextInteractionFlags(Qt.TextBrowserInteraction)
             label.setOpenExternalLinks(True)
+            # The dialog is sized by the first text ("Checking for updates\u2026") and
+            # does not grow when the result replaces it, so the version lines
+            # would wrap. A minimum width keeps each of them on one line.
+            label.setMinimumWidth(430)
         self._start_worker(
             updates.fetch_latest,
             on_finished=lambda result: self._about_update_result(box, result),
@@ -2101,10 +2104,7 @@ class MainWindow(QMainWindow):
             latest, url = result
             state = updates.compare(__import__("gui").__version__, latest)
             if state == "newer":
-                line = (
-                    f"<b>New version available: v{latest}.</b> "
-                    f'<a href="{url}">Download the latest release</a>'
-                )
+                line = f'<a href="{url}">New version available: v{latest}</a>'
             elif state == "unknown":
                 line = "Could not check for updates."
             else:

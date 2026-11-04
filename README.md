@@ -1,398 +1,72 @@
 # Proton Drive GUI
 
-A minimal desktop GUI wrapper around the official [Proton Drive CLI](https://proton.me/support/drive-cli).
+A desktop window for Proton Drive on Linux. It runs on top of Proton's official
+command-line client (`proton-drive`): the app doesn't reimplement any Proton
+protocol and doesn't touch your login.
 
-> **Not affiliated with Proton AG.** This is a third-party client that shells out to
-> the official `proton-drive` binary — it doesn't reimplement any Proton Drive
-> protocol or touch your credentials directly.
+> **Not affiliated with Proton AG.** This is a third-party client.
 
-> **Linux only.** Built and tested on Linux. PySide6 is technically
-> cross-platform, so it may run on Windows/macOS with some tweaks, but that's
-> untested and unsupported for now.
+> **Linux only.** Built and tested on Linux.
 
-![Proton Drive GUI screenshot](assets/screenshot.png)
+![Proton Drive GUI](assets/screenshot.png)
 
-## Status
+## What it does
 
-Actively developed, covers most everyday file-management workflows. Currently
-supports:
+- Browse My files with a folder tree in the sidebar; list or grid view
+- Upload (button or drag and drop), download with progress, move, copy, rename
+- Copy, cut and paste; new folder and new file; move to Trash
+- Trash: restore, delete permanently, empty trash
+- Photos with real file names and sizes
+- Folder sizes, folder colours and a cached folder list for faster opening
+- Light and dark themes
 
-- Browsing folders (double-click to open, "Back" to go back — disabled at the root)
-- Uploading files into the current folder — via the toolbar button or by
-  dragging files onto the window
-- Downloading selected files/folders to a local directory
-- Upload/download progress bar (best-effort — scrapes the CLI's live spinner
-  output since there's no `--json` progress format; see caveat in Roadmap)
-- Delete key moves the selected item(s) in "My files" to Trash (confirms first)
-- Right-click a file or folder in My files for the same menu as the web app:
-  Download, Share (coming soon), Move to folder, Make a copy, Rename,
-  Information, Move to Trash. Move to folder opens a picker that browses
-  your folders. Photos offers Download and Information; Shared sections
-  offer Information only until their actions are confirmed.
-- Browse Trash, restore or permanently delete individual items (right-click),
-  and Empty Trash (only shown while browsing Trash; both confirm first, since
-  they're irreversible)
-- Breadcrumb trail showing where you are, click any segment to jump back —
-  with a Refresh button, a "Go to path…" button (for typing an exact path,
-  e.g. into sections without a sidebar shortcut), and List/Grid view toggle,
-  all in the same row. No more permanently-visible path bar.
-- Log in / log out (`auth login` opens your browser, `auth logout` is instant)
-- Left sidebar: a prominent "New folder" button up top, then My files, Photos,
-  Trash, Shared by me, Shared with me (the last two are new and only lightly
-  tested — right-click actions are intentionally disabled there until
-  confirmed safe), with the current section highlighted and Log in/About
-  pinned to the bottom
-- List view and grid/tile view, switchable from the top-right of the breadcrumb
-  row. Both use the same color-coded icons everywhere (amber folders, blue
-  photos, red videos, green spreadsheets, tan archives, purple audio, grey
-  everything else — a .jpg looks the same whether you're in My files or
-  Photos, and file type is guessed from the extension when the CLI doesn't
-  classify it) and filenames elided to keep the extension visible. Icons also
-  adapt to button state — muted when disabled, recolored when a sidebar
-  section is the current one — instead of staying one fixed color regardless.
-  List view drops the old spreadsheet look (row numbers, hard grid lines) for
-  a plain modern row list with alternating rows; grid view uses a real fixed
-  grid instead of the earlier ragged flow layout.
-- Photos shows real filenames, real file sizes, and a distinct icon for videos
-  vs photos (`photo timeline -d` turned out far richer than the undetailed
-  version) — no actual image thumbnails though, since the CLI has no
-  lightweight thumbnail-fetch call, only full-file download
-- Context menus and dialogs (popups, message boxes, the progress bar) are
-  styled to match the rest of the app instead of looking like bare default
-  Qt widgets
-- Information… (right-click) shows name, type, size, modified date, share
-  status, and full path (for folders, the total size and item count).
-  Available everywhere, including Photos and Shared,
-  since it only reads data already on hand
-- Light/dark theme toggle (bottom of the sidebar) — choice is remembered
-- Remembers the last section and folder you were in, plus window size and
-  position, across launches
-- Expandable folder tree under My files in the sidebar: click the arrow to show
-  your top-level folders, expand any folder to load its subfolders, click a
-  folder to open it. Scrollbar appears when you hover over the tree
-- List or grid view is remembered across launches
-- Right-click on empty space in My files: New folder, New file (uploads an empty
-  file with the name you give, since the CLI has no create-file command), and
-  Paste. Items can be Copied or Cut (right-click, or Ctrl+C / Ctrl+X) and
-  Pasted (Ctrl+V). The clipboard is internal to the app, not the system
-  clipboard. A pasted copy that clashes with an existing name gets " (copy)".
-- Folder colours: right-click a folder in My files → Folder colour, pick one
-  (or Default). Colours are stored only on this computer, in
-  `~/.config/protondrive-gui/folder_colors.json`, keyed by each folder's id, so
-  they survive renames and moves. They don't show in the web app or on other
-  devices, because the CLI has no way to set a folder colour.
-- Folder listings are cached on your computer (`~/.cache/protondrive-gui/`,
-  readable only by you) so that a folder you've opened before appears at once,
-  and the live listing replaces it when it arrives. The cache is cleared when
-  you log out, and My files entries are dropped after any change made in the
-  app. Changes made elsewhere (another device, the web app) show up after the
-  live listing loads. The cache stores file and folder names, so delete that
-  directory if you don't want them kept on disk.
-- Folder sizes in the Size column are counted in the background (one folder at
-  a time) and remembered between launches. They're refreshed after an hour, or
-  immediately after any change made in the app
-- About shows the installed CLI version and whether a newer CLI is out. It also
-  checks GitHub for the latest release of this app and links to it. That is the
-  only network request the GUI makes outside the CLI, and it happens only when
-  you open About
-- Shows the signed-in account email at the right of the top toolbar (taken
-  from the file listing, so no extra CLI call is needed)
-  between launches
+The full list, with limitations, is in [docs/features.md](docs/features.md).
 
-Not yet implemented (see [Roadmap](#roadmap)): search, sharing management
-(invite/remove/set-url), multi-select bulk actions.
+## Install
 
-## Requirements
+Pick one. Each needs the official `proton-drive` CLI as well.
 
-- Linux
-- Python 3.10+
-- The official [Proton Drive CLI](https://proton.me/drive/download), installed and on your `PATH` as `proton-drive`
+- **Debian, Ubuntu, Linux Mint**: download the `.deb` from the
+  [Releases page](https://github.com/al3xg0r/protondrive-gui/releases) and run
+  `sudo apt install ./protondrive-gui_<version>_amd64.deb`.
+- **Any Linux**: download the AppImage from the
+  [latest release](https://github.com/al3xg0r/protondrive-gui/releases/latest),
+  make it executable and run it.
+- **From source**: `./install.sh` installs the CLI and everything else in one go.
 
-## Download
+Step-by-step instructions, including the manual setup and building your own
+packages, are in [docs/install.md](docs/install.md).
 
-Grab `ProtonDriveGUI-x86_64.AppImage` from the [latest release](https://github.com/al3xg0r/protondrive-gui/releases/latest), make it executable and run it:
+Log in once with `proton-drive auth login`, then start **Proton Drive GUI**.
 
-    chmod +x ProtonDriveGUI-x86_64.AppImage
-    ./ProtonDriveGUI-x86_64.AppImage
+## Documentation
 
-The official `proton-drive` CLI must be installed and on your `PATH`.
-
-## Setup
-
-### Quick start (recommended)
-
-One script does everything: installs system packages, downloads and verifies
-the official CLI, sets up the Python environment, and adds a desktop
-launcher.
-
-```bash
-git clone https://github.com/<your-username>/protondrive-gui.git
-cd protondrive-gui
-./install.sh
-```
-
-It only asks for `sudo` once, to install system packages (`libxcb-cursor0`
-for the GUI; `libsecret` and `dbus-x11`, which the official CLI itself needs
-to store your login session). Everything else stays local to your user
-account or this folder. Safe to re-run any time — it skips whatever's
-already done.
-
-Once it finishes:
-
-```bash
-proton-drive auth login   # one-time login, opens your browser
-```
-
-Then launch **Proton Drive GUI** from your application menu.
-
-### Manual setup
-
-If you'd rather do it yourself, or `install.sh` doesn't fit your distro:
-
-```bash
-# 1. Install and authenticate the official CLI first (one-time, from a terminal)
-./proton-drive auth login
-
-# 2. Clone this repo
-git clone https://github.com/<your-username>/protondrive-gui.git
-cd protondrive-gui
-
-# 3. Install Python dependencies (a virtualenv is recommended)
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 4. Run
-python -m gui
-```
-
-Or, install it as a proper package:
-
-```bash
-pip install -e .
-protondrive-gui
-```
-
-### Desktop launcher only
-
-If you already have the CLI and a venv set up and just want the app-menu
-launcher:
-
-```bash
-./scripts/install-desktop-entry.sh
-```
-
-This installs `~/.local/share/applications/protondrive-gui.desktop` pointing
-at your venv, so "Proton Drive GUI" shows up in your app launcher/dock like
-any other installed app.
-
-### .deb package (Debian, Ubuntu, Linux Mint)
-
-Download `protondrive-gui_<version>_amd64.deb` (or `arm64`) from the
-[Releases page](../../releases) and open it with your software installer, or:
-
-```bash
-sudo apt install ./protondrive-gui_<version>_amd64.deb
-```
-
-`apt` installs the system libraries it needs on its own. The package contains
-the app with its own Python and PySide6, so it doesn't depend on the PySide6
-version in your distribution. It adds a `protondrive-gui` command, an app-menu
-entry and an icon. Remove it with `sudo apt remove protondrive-gui`; your
-settings (`~/.config/protondrive-gui`) and cache (`~/.cache/protondrive-gui`)
-are left alone.
-
-Things to know:
-
-- It does **not** include Proton's official `proton-drive` command-line client,
-  which still has to be installed separately (`./install.sh` does it, or see
-  <https://proton.me/drive/download>). Without it the app tells you it can't
-  find the CLI.
-- The release packages are built on Ubuntu 22.04, so they need a system at
-  least that recent (Ubuntu 22.04, Debian 12, Linux Mint 21 or newer). The
-  package declares the exact glibc version it needs, and `apt` refuses to
-  install it on an older system rather than leaving you with an app that won't
-  start.
-- There is no apt repository, so `apt upgrade` won't update it: install the
-  newer `.deb` yourself. The About dialog tells you when a newer version is out.
-
-To build one yourself, run `./build-deb.sh` on Debian, Ubuntu or Mint (it needs
-`python3`, `pip` and `dpkg-deb`; set `DEB_MAINTAINER="Name <you@example.com>"`
-to change the contact in the package). The result is
-`dist/protondrive-gui_<version>_<arch>.deb`.
-
-### AppImage
-
-Prefer a single portable file over a venv? Build one:
-
-```bash
-./build-appimage.sh
-```
-
-This freezes the GUI (Python + PySide6) with PyInstaller and packages it as
-`dist/ProtonDriveGUI-<arch>.AppImage`. It's self-contained for the GUI part,
-but — same as every other install method here — it still expects the
-official `proton-drive` CLI to already be on your `PATH` at runtime; the
-AppImage doesn't bundle that. Run `./install.sh` first (or install the CLI
-yourself), then just double-click or run the `.AppImage` file.
-
-Needs `python3`, `pip`, and `curl` (it downloads `appimagetool` from GitHub
-the first time). Built and tested successfully end-to-end while developing
-this feature. Flatpak and Snap are deliberately not offered.
-
-Prebuilt AppImages (`linux/x64` and `linux/arm64`) are attached automatically
-to each GitHub Release from `v1.0.1` onward, and `.deb` packages from `v1.4.0`, via
-[`.github/workflows/build-appimage.yml`](.github/workflows/build-appimage.yml) —
-grab one from the [Releases page](../../releases) instead of building it
-yourself if you just want to run the app. `x64-baseline` and `musl` variants
-(unlike the official CLI, which ships all of these) aren't produced: the
-"baseline" distinction is specific to the CLI's own compiled binary, and
-PySide6 has no prebuilt musl wheels to build against.
-
-## A note on the JSON schema
-
-The Proton Drive CLI supports a `--json` flag but Proton hasn't published one
-single documented schema for its output. `gui/cli.py` normalizes
-a handful of common field-name variants (`name`/`Name`, `size`/`Size`, etc.).
-
-If items show up with missing names/sizes on your CLI version, run:
-
-```bash
-proton-drive filesystem list / --json
-```
-
-...and compare the raw output to `ProtonDriveCLI._normalize_item()` in
-`gui/cli.py` — that's the only place that should need adjusting.
-Pull requests fixing this for real-world output are very welcome.
-
-## What the CLI can and can't do (per its official docs)
-
-Cross-checked against the [official CLI README](https://github.com/ProtonDriveApps/sdk/blob/main/cli/README.md)
-and `--help` output, beyond what's already covered above. The CLI changes between
-releases, so re-check these after updating it:
-
-**Confirmed possible, not yet wired into the GUI:**
-- Copy/move (`filesystem copy`, `filesystem move`) — not exposed in the UI yet
-- Sharing management: `sharing status`, `sharing invite`, `sharing leave`,
-  `sharing remove`, `sharing set-url`, `sharing remove-url`, plus
-  `invitation list/accept/reject` — none of this is wired up; the GUI can
-  only *browse* Shared by me/Shared with me so far
-- Albums (`album list/create/update/delete/photos/add-photo/remove-photo`)
-  — entirely separate from the Photos timeline view, not touched at all
-- Folder uploads via `filesystem upload` (confirmed by the docs' own example,
-  `filesystem upload ./local-folder /my-files/parent`) — now supported via
-  drag & drop in My files
-
-**Confirmed not possible, at least not through this CLI:**
-- Account storage quota — no `whoami`/`account`/`quota` command appears in
-  the CLI's help. The account email is shown anyway, read from the owner
-  field of file listings rather than from a dedicated command
-- Real image/video thumbnails — the CLI generates WebP thumbnails *on
-  upload* for the official apps' own use, but exposes no command to fetch
-  one back down; only full-file `photo download` gets you actual pixels
-- Folder uploads for Photos specifically — the docs' folder-upload example
-  is for `filesystem upload`, not `photo upload`; unconfirmed either way
-
-**Background/context that doesn't change the GUI, but explains some quirks:**
-- The CLI is built on Bun and its own SDK, which the docs describe as
-  **not yet ready for third-party production use** and expected to change —
-  Proton's own words, not a knock on this project; it's part of why some of
-  this app's parsing is defensive/best-effort rather than a stable contract
-- Proton has an upcoming cryptographic migration for Drive that could
-  change output shapes again in the future
-- Credentials live in your OS's secret store (libsecret on Linux) under the
-  service `ch.proton.drive/drive-sdk-cli` — nothing this GUI touches directly
-- CLI cache/logs live under `~/.cache/proton-drive-cli`,
-  `~/.local/share/proton-drive-cli`, and `~/.local/state/proton-drive-cli`
-  by default (or wherever `$PROTON_DRIVE_CACHE_DIR` points, if you set it) —
-  useful to know when troubleshooting CLI-level issues that aren't this GUI's fault
-
-## Roadmap
-
-- [x] ~~Packaging as an AppImage~~ — `./build-appimage.sh`.
-- [x] ~~Folder size~~ — `filesystem size` shows the total size and item count
-      in Information… for folders. The Size column still shows a dash for
-      folders, so sizes appear on demand rather than for every folder at once.
-- [ ] Account storage quota — no command for it appears in the CLI's help or
-      the official docs at the time of checking; re-check after CLI updates.
-      The docs describe the Account SDK piece (where quota would live) as
-      "incubating, not for public distribution".
-- [ ] Local folder sync — the CLI has no watch/sync mode at all, only manual
-      upload/download; any "sync" here would be built on top (watch a local
-      folder, auto-upload on change; optionally poll the remote folder too
-      for two-way). Deliberately postponed — two-way sync in particular
-      risks real data loss (conflicts, deletions) if rushed.
-- [x] ~~Real names/sizes for Photos~~ — `photo timeline -d` exposes the real
-      filename, size, and media type, so Photos no longer shows bare capture
-      dates as placeholder names
-- [ ] Real image thumbnails in the Photos grid — deliberately not implemented;
-      confirmed against the official CLI docs (thumbnails are only generated
-      *on upload*, as WebP, for the official apps' own use — there's no
-      subcommand to fetch one back down, only full-file `photo download`).
-      Would mean silently downloading full photos/videos just to render a
-      grid. Revisit if Proton ever exposes a thumbnail-fetch endpoint.
-- [x] ~~Delete key shortcut~~ — moves the selection to Trash in My files, with confirmation
-- [x] ~~List/grid view toggle~~ — in the top toolbar
-- [x] ~~Shared by me / Shared with me~~ — added as sidebar sections; listing
-      reuses the same `filesystem list` call as My files/Trash (an educated
-      guess, not confirmed against real shared content yet — please report
-      back if browsing them errors or shows something unexpected). Rename,
-      delete, and Restore are deliberately **not** enabled there yet — those
-      likely need different verbs (leave/unshare) for content you don't own,
-      and guessing wrong risked doing the wrong thing to someone else's files
-- [ ] Sharing management itself — `sharing invite`, `sharing status`,
-      `sharing set-url`, accepting/rejecting invitations — none of this is
-      wired up yet, only browsing shared content
-- [x] ~~Permanent delete~~ — Empty Trash (`filesystem empty-trash`) and
-      per-item Delete Permanently (`filesystem delete`, right-click in Trash)
-      are both wired up, each confirms first since they're irreversible
-- [x] ~~Breadcrumbs~~ — clickable trail above the file list
-- [x] ~~Drag & drop upload~~ — drop files (and, in My files, whole folders too
-      — the official CLI docs show `filesystem upload ./local-folder
-      /my-files/parent` as a normal example) onto the window. Photos upload
-      is still files-only; folder support there is unconfirmed.
-- [x] ~~Upload/download progress~~ — done, but fragile by nature: it scrapes the
-      CLI's live spinner text (`NN.NN% name (size)`), which isn't a documented
-      format and has no `--json` equivalent. May silently stop working after a
-      CLI update.
-- [ ] Sharing (`sharing invite`, list existing shares) — the Share… menu
-      entry is a placeholder until the CLI's role values and output formats
-      are confirmed
-- [ ] Search
-- [ ] Remember last-visited folder / window state
-- [x] ~~Dark/light theme~~ — manual toggle in the sidebar, remembered
-      between launches via QSettings (not tied to the system theme
-      automatically — no "follow system" mode yet)
-- [x] ~~Show logged-in account~~ — email shown in the top toolbar, read from the file listing's owner field. Storage quota is still not shown (see above).
-- [x] ~~One-shot installer~~ — `./install.sh` fetches the CLI (with checksum
-      verification), installs system deps, sets up the venv, and installs
-      the desktop launcher
+- [Installing](docs/install.md)
+- [Features](docs/features.md), including what data is kept on your computer
+- [CLI notes](docs/cli.md): what the official CLI can and can't do
+- [Roadmap](docs/roadmap.md)
+- [Changelog](CHANGELOG.md)
 
 ## Contributing
 
-Issues and PRs welcome. The GUI layer (`gui/main_window.py`) and the CLI
-wrapper (`gui/cli.py`) are kept separate on purpose — most new features only
-need changes in one of the two.
+Issues and pull requests are welcome. The GUI (`gui/main_window.py`) and the CLI
+wrapper (`gui/cli.py`) are kept apart on purpose, so most changes touch only one
+of them.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) —
-free to use, modify, and share for any noncommercial purpose (personal use,
-hobby projects, education, nonprofits, etc.), but not for commercial use or
-resale. It also requires anyone redistributing the software to keep the
-copyright/attribution notice pointing back to this repository. See
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+Free for any noncommercial use, including personal, educational and nonprofit
+use. Commercial use and resale are not allowed. Anyone redistributing the
+software must keep the notice pointing back to this repository. See
 [LICENSE](LICENSE) for the exact terms.
 
-Note: this isn't an OSI-approved open-source license (OSI's definition
-requires allowing commercial use, which this deliberately doesn't), so
-GitHub may label the repo "Other" rather than a familiar license name — this
-was a deliberate choice to keep the project from being resold or bundled
-into a paid product, not an accident. This isn't legal advice; if this
-matters a lot for your situation, it's worth a quick look by someone
-qualified.
+This is not an OSI-approved open-source license, because OSI's definition
+requires allowing commercial use. This isn't legal advice; if it matters for
+your situation, check with someone qualified.
 
 ---
 
-Don't have a Proton account yet? This app (and Proton Drive itself) is free —
-if you sign up via [my referral link](https://pr.tn/ref/H3Y6DHT7) it costs
-you nothing extra and gives me a little credit. Totally optional.
+No Proton account yet? Proton Drive is free to start. If you sign up through
+[my referral link](https://pr.tn/ref/H3Y6DHT7), it costs you nothing extra and
+gives me a little credit. Entirely optional.
