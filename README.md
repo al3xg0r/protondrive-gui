@@ -14,7 +14,7 @@ protocol and doesn't touch your login.
 
 - Browse My files with a folder tree in the sidebar; list or grid view
 - Upload (button or drag and drop), download with progress, move, copy, rename
-- Sort by name, size or date
+- Sort by name or date
 - Copy, cut and paste; new folder and new file; move to Trash
 - Trash: restore, delete permanently, empty trash
 - Photos with real file names and sizes

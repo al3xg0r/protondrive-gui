@@ -14,8 +14,8 @@ What the app does today. Anything not listed here is on the
   tree.
 - **Breadcrumbs** with Back and Refresh, plus **Go to path…** for typing a path
   directly.
-- **Sorting** by name, size or date modified. Click a column heading, or use
-  the sort button above the list; a second click reverses the order. Folders
+- **Sorting** by name or date modified. Click the Name or Modified heading, or
+  use the sort button above the list; a second click reverses the order. Folders
   stay in front in My files. Photos has its own sort, newest first by default.
   Choices are remembered.
 - **List and grid views**, remembered across launches. Folders are amber

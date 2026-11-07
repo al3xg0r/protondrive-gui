@@ -81,7 +81,7 @@ def human_size(n) -> str:
     return f"{n:.1f} PB"
 
 
-SORT_KEYS = ("name", "size", "modified")
+SORT_KEYS = ("name", "modified")
 
 
 def natural_key(text: str) -> list:
@@ -92,12 +92,9 @@ def natural_key(text: str) -> list:
 
 
 def sort_items(items: list, key: str, descending: bool, folders_first: bool = True) -> list:
-    """Orders a listing by name, size or modified date. Folders stay in front,
-    as in a file manager. A folder has no size of its own, so when sorting by
-    size the folders are simply listed by name."""
+    """Orders a listing by name or modified date. Folders stay in front, as in
+    a file manager."""
     def value(item):
-        if key == "size":
-            return item.size or 0
         if key == "modified":
             return item.modified or ""
         return natural_key(item.name)
@@ -106,11 +103,7 @@ def sort_items(items: list, key: str, descending: bool, folders_first: bool = Tr
         return sorted(items, key=value, reverse=descending)
     folders = [i for i in items if i.is_folder]
     files = [i for i in items if not i.is_folder]
-    if key == "size":
-        folders = sorted(folders, key=lambda i: natural_key(i.name))
-    else:
-        folders = sorted(folders, key=value, reverse=descending)
-    return folders + sorted(files, key=value, reverse=descending)
+    return sorted(folders, key=value, reverse=descending) + sorted(files, key=value, reverse=descending)
 
 
 def elide_filename(name: str, max_len: int = 15) -> str:
@@ -871,7 +864,7 @@ class MainWindow(QMainWindow):
         self._sort_menu = QMenu(self)
         self._sort_key_actions = {}
         key_group = QActionGroup(self)
-        for key, label in (("name", "Name"), ("size", "Size"), ("modified", "Date modified")):
+        for key, label in (("name", "Name"), ("modified", "Date modified")):
             act = self._sort_menu.addAction(label)
             act.setCheckable(True)
             key_group.addAction(act)
@@ -1286,7 +1279,7 @@ class MainWindow(QMainWindow):
     def _update_header_labels(self):
         key, descending = self._sort_state[self._sort_context()]
         arrow = " \u25bc" if descending else " \u25b2"
-        names = (("name", "Name"), ("size", "Size"), ("modified", "Modified"))
+        names = (("name", "Name"), ("size", "Size"), ("modified", "Modified"))  # Size is shown, not sortable
         self.table.setHorizontalHeaderLabels([n + (arrow if k == key else "") for k, n in names])
 
     def _sync_sort_menu(self):
@@ -1295,8 +1288,10 @@ class MainWindow(QMainWindow):
         self._sort_dir_actions[descending].setChecked(True)
 
     def _on_header_clicked(self, column: int):
-        if 0 <= column < len(SORT_KEYS):
-            self._choose_sort(SORT_KEYS[column])
+        # Column 0 is Name, column 2 is Modified; Size is not a sort key.
+        key = {0: "name", 2: "modified"}.get(column)
+        if key is not None:
+            self._choose_sort(key)
 
     def _choose_sort(self, key: str):
         context = self._sort_context()
@@ -1305,7 +1300,7 @@ class MainWindow(QMainWindow):
             descending = not descending
         else:
             # Biggest and newest first is what is usually wanted; names go A to Z.
-            descending = key in ("size", "modified")
+            descending = key == "modified"
         self._sort_state[context] = (key, descending)
         self._resort()
 
@@ -2203,7 +2198,7 @@ class MainWindow(QMainWindow):
             cli_line = f"Proton Drive CLI: v{cli_ver} &nbsp;\u2014&nbsp; You have the latest version."
         else:
             cli_line = "Proton Drive CLI: not found"
-        gui_line = f"<b>Proton Drive GUI:</b> v{__version__}"
+        gui_line = f"Proton Drive GUI: v{__version__}"
         if update_line:
             gui_line += f" &nbsp;\u2014&nbsp; {update_line}"
         whats_new = ""
@@ -2214,7 +2209,7 @@ class MainWindow(QMainWindow):
                 f"<li>{html.escape(text)}</li>" for text in bullets[:6]
             )
             whats_new = (
-                f"<p style='margin:0 0 4px 0'><b>What's new in v{html.escape(version)}</b></p>"
+                f"<p style='margin:0 0 4px 0'>What's new in v{html.escape(version)}</p>"
                 f"<ul style='margin:0 0 12px 18px'>{items}</ul>"
             )
         return (
@@ -2239,7 +2234,9 @@ class MainWindow(QMainWindow):
             # The dialog is sized by the first text ("Checking for updates\u2026") and
             # does not grow when the result replaces it, so the version lines
             # would wrap. A minimum width keeps each of them on one line.
-            label.setMinimumWidth(430)
+            label.setWordWrap(True)
+            # QMessageBox ignores its own minimum width; the label's minimum sets the dialog's.
+            label.setMinimumWidth(440)
         self._start_worker(
             updates.fetch_latest,
             on_finished=lambda result: self._about_update_result(box, result),
@@ -2262,6 +2259,7 @@ class MainWindow(QMainWindow):
             else:
                 line = "You have the latest version."
         box.setText(self._about_text(update_line=line))
+        box.adjustSize()
 
     # -- upload / download -------------------------------------------------------
 
