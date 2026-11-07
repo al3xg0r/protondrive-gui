@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+import html
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QEvent, QModelIndex, QSettings, QSize, Qt, QThreadPool, QTimer
+from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QSettings, QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -77,6 +79,38 @@ def human_size(n) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
     return f"{n:.1f} PB"
+
+
+SORT_KEYS = ("name", "size", "modified")
+
+
+def natural_key(text: str) -> list:
+    """Case-insensitive, number-aware key: "file2" sorts before "file10", the
+    way file managers order names. The split always alternates text and digits,
+    so two keys are compared piece by piece with matching types."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
+
+
+def sort_items(items: list, key: str, descending: bool, folders_first: bool = True) -> list:
+    """Orders a listing by name, size or modified date. Folders stay in front,
+    as in a file manager. A folder has no size of its own, so when sorting by
+    size the folders are simply listed by name."""
+    def value(item):
+        if key == "size":
+            return item.size or 0
+        if key == "modified":
+            return item.modified or ""
+        return natural_key(item.name)
+
+    if not folders_first:
+        return sorted(items, key=value, reverse=descending)
+    folders = [i for i in items if i.is_folder]
+    files = [i for i in items if not i.is_folder]
+    if key == "size":
+        folders = sorted(folders, key=lambda i: natural_key(i.name))
+    else:
+        folders = sorted(folders, key=value, reverse=descending)
+    return folders + sorted(files, key=value, reverse=descending)
 
 
 def elide_filename(name: str, max_len: int = 15) -> str:
@@ -295,7 +329,7 @@ REPO_URL = "https://github.com/al3xg0r/protondrive-gui"
 ABOUT_LINKS = [
     ("Project on GitHub", REPO_URL),
     ("Report a bug", f"{REPO_URL}/issues/new"),
-    ("Support the project", "https://ko-fi.com/al3xg0r"),
+    ("Support the project", "https://patreon.com/al3xg0r"),
 ]
 
 
@@ -413,6 +447,10 @@ class MainWindow(QMainWindow):
         self._path_uid: dict[str, str] = {}
         self._clipboard = None
         self._color_icons: dict = {}
+        self._sort_state = {
+            "files": self._load_sort("sort_files", ("name", False)),
+            "photos": self._load_sort("sort_photos", ("modified", True)),
+        }
         self._folder_sizes: dict[str, list] = self._load_folder_sizes()
         self._size_queue: list[str] = []
         self._size_busy = False
@@ -824,6 +862,34 @@ class MainWindow(QMainWindow):
         crumb_row.addLayout(self.breadcrumb_bar)
         crumb_row.addStretch(1)
 
+        self.sort_button = QToolButton()
+        self.sort_button.setIcon(self._icon("sort"))
+        self.sort_button.setToolTip("Sort by\u2026")
+        self.sort_button.setAutoRaise(True)
+        self.sort_button.setPopupMode(QToolButton.InstantPopup)
+        self.sort_button.setCursor(Qt.PointingHandCursor)
+        self._sort_menu = QMenu(self)
+        self._sort_key_actions = {}
+        key_group = QActionGroup(self)
+        for key, label in (("name", "Name"), ("size", "Size"), ("modified", "Date modified")):
+            act = self._sort_menu.addAction(label)
+            act.setCheckable(True)
+            key_group.addAction(act)
+            act.triggered.connect(lambda _=False, k=key: self._choose_sort(k))
+            self._sort_key_actions[key] = act
+        self._sort_menu.addSeparator()
+        self._sort_dir_actions = {}
+        dir_group = QActionGroup(self)
+        for descending, label in ((False, "Ascending"), (True, "Descending")):
+            act = self._sort_menu.addAction(label)
+            act.setCheckable(True)
+            dir_group.addAction(act)
+            act.triggered.connect(lambda _=False, d=descending: self._set_sort_direction(d))
+            self._sort_dir_actions[descending] = act
+        self._sort_menu.aboutToShow.connect(self._sync_sort_menu)
+        self.sort_button.setMenu(self._sort_menu)
+        crumb_row.addWidget(self.sort_button)
+
         view_mode_group = QActionGroup(self)
         view_mode_group.setExclusive(True)
         self.list_view_action = QAction(self._icon("list_view"), "List view", self)
@@ -857,6 +923,8 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setHighlightSections(False)
+        self.table.horizontalHeader().setSectionsClickable(True)
+        self.table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         # A classic spreadsheet look (row numbers, hard grid lines) is
         # what made this feel dated / "like an old PC folder" in testing —
         # dropped in favor of the row-list look real file managers use.
@@ -1195,6 +1263,79 @@ class MainWindow(QMainWindow):
         tree = getattr(self, "folder_tree", None)
         if tree is not None and tree.isVisible() and self.cli:
             self._load_tree_roots()
+
+    # -- sorting ----------------------------------------------------------------
+
+    def _sort_context(self) -> str:
+        return "photos" if self.current_root == PHOTOS_ROOT else "files"
+
+    def _load_sort(self, setting: str, default: tuple) -> tuple:
+        try:
+            key, direction = str(self._settings.value(setting, "")).split(":")
+        except ValueError:
+            return default
+        if key in SORT_KEYS and direction in ("asc", "desc"):
+            return key, direction == "desc"
+        return default
+
+    def _save_sort(self):
+        for context, setting in (("files", "sort_files"), ("photos", "sort_photos")):
+            key, descending = self._sort_state[context]
+            self._settings.setValue(setting, f"{key}:{'desc' if descending else 'asc'}")
+
+    def _update_header_labels(self):
+        key, descending = self._sort_state[self._sort_context()]
+        arrow = " \u25bc" if descending else " \u25b2"
+        names = (("name", "Name"), ("size", "Size"), ("modified", "Modified"))
+        self.table.setHorizontalHeaderLabels([n + (arrow if k == key else "") for k, n in names])
+
+    def _sync_sort_menu(self):
+        key, descending = self._sort_state[self._sort_context()]
+        self._sort_key_actions[key].setChecked(True)
+        self._sort_dir_actions[descending].setChecked(True)
+
+    def _on_header_clicked(self, column: int):
+        if 0 <= column < len(SORT_KEYS):
+            self._choose_sort(SORT_KEYS[column])
+
+    def _choose_sort(self, key: str):
+        context = self._sort_context()
+        current_key, descending = self._sort_state[context]
+        if key == current_key:
+            descending = not descending
+        else:
+            # Biggest and newest first is what is usually wanted; names go A to Z.
+            descending = key in ("size", "modified")
+        self._sort_state[context] = (key, descending)
+        self._resort()
+
+    def _set_sort_direction(self, descending: bool):
+        context = self._sort_context()
+        self._sort_state[context] = (self._sort_state[context][0], descending)
+        self._resort()
+
+    def _resort(self):
+        """Re-order what is on screen and keep the selection on the same items."""
+        self._save_sort()
+        selected = {self.items[r].name for r in self._selected_rows() if r < len(self.items)}
+        # Qt remembers a selection by row number, so rows that were selected would
+        # now point at different files. Clear it, then select the same files again.
+        self.table.clearSelection()
+        self.grid.clearSelection()
+        self._on_list_loaded(self.items)
+        if not selected:
+            return
+        on_grid = self.view_stack.currentWidget() is self.grid_panel
+        for row, item in enumerate(self.items):
+            if item.name not in selected:
+                continue
+            if on_grid:
+                self.grid.item(row).setSelected(True)
+            else:
+                self.table.selectionModel().select(
+                    self.table.model().index(row, 0),
+                    QItemSelectionModel.Select | QItemSelectionModel.Rows,
+                )
 
     def _tree_open_flag(self) -> bool:
         return bool(getattr(self, "_tree_open", False))
@@ -1806,11 +1947,10 @@ class MainWindow(QMainWindow):
         if self.current_root != PHOTOS_ROOT:
             self._record_uids(self.current_path.rstrip('/'), items)
 
-        if self.current_root == PHOTOS_ROOT:
-            # Flat, most-recent-first — there's no folder hierarchy here.
-            self.items = sorted(items, key=lambda i: i.modified or "", reverse=True)
-        else:
-            self.items = sorted(items, key=lambda i: (not i.is_folder, i.name.lower()))
+        key, descending = self._sort_state[self._sort_context()]
+        # Photos is flat (no folders); everywhere else folders stay in front.
+        self.items = sort_items(items, key, descending, folders_first=self.current_root != PHOTOS_ROOT)
+        self._update_header_labels()
 
         self.table.setRowCount(len(self.items))
         self.grid.clear()
@@ -2066,9 +2206,21 @@ class MainWindow(QMainWindow):
         gui_line = f"<b>Proton Drive GUI:</b> v{__version__}"
         if update_line:
             gui_line += f" &nbsp;\u2014&nbsp; {update_line}"
+        whats_new = ""
+        entry = updates.latest_changelog_entry(__version__)
+        if entry and entry[1]:
+            version, bullets = entry
+            items = "".join(
+                f"<li>{html.escape(text)}</li>" for text in bullets[:6]
+            )
+            whats_new = (
+                f"<p style='margin:0 0 4px 0'><b>What's new in v{html.escape(version)}</b></p>"
+                f"<ul style='margin:0 0 12px 18px'>{items}</ul>"
+            )
         return (
             f"<p style='margin:0 0 12px 0'>{gui_line}</p>"
             f"<p style='margin:0 0 12px 0'>{cli_line}</p>"
+            f"{whats_new}"
             "A free desktop client for the official Proton Drive CLI, for noncommercial use.<br><br>"
             + " &nbsp;\u00b7&nbsp; ".join(
                 f'<a href="{url}">{label}</a>' for label, url in ABOUT_LINKS

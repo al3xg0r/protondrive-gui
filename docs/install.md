@@ -19,11 +19,17 @@ app with its own Python and PySide6, so it doesn't depend on the PySide6
 version in your distribution. It adds a `protondrive-gui` command, an app-menu
 entry and an icon.
 
-- Remove it with `sudo apt remove protondrive-gui`. Your settings
+**The official CLI is installed too.** During installation the package
+downloads `proton-drive` from proton.me and checks it against Proton's published
+SHA-512 checksum. It needs internet access for that. If the CLI is already on
+your system it's left alone. If the download, the checksum or the network
+fails, the app still installs and the message says where to get the CLI from
+(<https://proton.me/drive/download>).
+
+- Remove it with `sudo apt remove protondrive-gui`. The CLI and your settings
   (`~/.config/protondrive-gui`) and cache (`~/.cache/protondrive-gui`) are kept.
-- It does **not** include the official `proton-drive` CLI. Install that
-  separately (`./install.sh` does it, or see <https://proton.me/drive/download>).
-  Without it the app tells you it can't find the CLI.
+- `sudo apt purge protondrive-gui` also removes the CLI, but only if this
+  package installed it.
 - Built on Ubuntu 22.04, so it needs a system at least that recent (Ubuntu
   22.04, Debian 12, Linux Mint 21 or newer). The package declares the glibc
   version it needs, and `apt` refuses to install it on an older system.

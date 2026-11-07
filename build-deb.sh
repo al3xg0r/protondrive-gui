@@ -18,21 +18,23 @@ set -euo pipefail
 # frozen app can be inspected while building.
 #
 # Set DEB_MAINTAINER="Your Name <you@example.com>" to change the contact in the
-# package metadata.
+# package metadata. By default it points at the repository, since there is no
+# dedicated support address.
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build-deb"
 PKGROOT="$BUILD_DIR/pkg"
 NAME="protondrive-gui"
 HOMEPAGE="https://github.com/al3xg0r/protondrive-gui"
-MAINTAINER="${DEB_MAINTAINER:-protondrive-gui contributors <noreply@github.com>}"
+MAINTAINER="${DEB_MAINTAINER:-protondrive-gui contributors <$HOMEPAGE>}"
 
-# System packages the frozen app needs at runtime.
+# System packages the frozen app needs at runtime, plus what the install step
+# uses to download the official CLI (curl, ca-certificates).
 #  - libxcb-cursor0 ... libxkbcommon-x11-0: helper libraries of Qt's "xcb"
 #    platform plugin; minimal systems lack them and the window won't open.
 #  - libsecret-1-0, dbus-x11: used by the official CLI to keep your login in
 #    the system keyring.
-DEPENDS="libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-render-util0, libxcb-shape0, libxcb-xkb1, libxkbcommon-x11-0, libsecret-1-0, dbus-x11"
+DEPENDS="curl, ca-certificates, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-render-util0, libxcb-shape0, libxcb-xkb1, libxkbcommon-x11-0, libsecret-1-0, dbus-x11"
 
 c_bold=$'\033[1m'; c_reset=$'\033[0m'
 say() { echo "${c_bold}==>${c_reset} $*"; }
@@ -65,6 +67,7 @@ pyinstaller \
     --windowed \
     --name "$NAME" \
     --add-data "$PROJECT_DIR/assets/icon.svg:assets" \
+    --add-data "$PROJECT_DIR/CHANGELOG.md:." \
     --distpath "$BUILD_DIR/dist" \
     --workpath "$BUILD_DIR/work" \
     --specpath "$BUILD_DIR" \
@@ -137,6 +140,88 @@ chmod -R u+rwX,go+rX,go-w "$PKGROOT"
 chmod 755 "$PKGROOT/DEBIAN"
 
 INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "$PKGROOT" | cut -f1)"
+# Install step: fetch the official CLI the same way install.sh does, and only
+# keep it if its SHA-512 matches the one Proton publishes. Problems here only
+# print a message: the app itself is installed either way.
+cat > "$PKGROOT/DEBIAN/postinst" << 'POSTINST_EOF'
+#!/bin/sh
+set -e
+
+CLI_BIN=/usr/local/bin/proton-drive
+MARKER=/usr/share/protondrive-gui/cli-installed-by-package
+INDEX_URL="${PD_CLI_INDEX_URL:-https://proton.me/download/drive/cli/index.html}"
+
+if [ "$1" != "configure" ]; then
+    exit 0
+fi
+
+say() { echo "protondrive-gui: $*"; }
+
+if command -v proton-drive >/dev/null 2>&1; then
+    say "proton-drive is already installed ($(command -v proton-drive)); leaving it alone."
+    exit 0
+fi
+
+case "$(dpkg --print-architecture)" in
+    amd64) platform=linux/x64 ;;
+    arm64) platform=linux/arm64 ;;
+    *)
+        say "no proton-drive build for this architecture. Install it yourself from https://proton.me/drive/download"
+        exit 0
+        ;;
+esac
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+if ! curl -fsSL --max-time 60 -o "$tmpdir/index.html" "$INDEX_URL"; then
+    say "could not reach $INDEX_URL. Install proton-drive yourself from https://proton.me/drive/download"
+    exit 0
+fi
+
+row="$(grep -F "| $platform " "$tmpdir/index.html" | head -n 1 || true)"
+url="$(echo "$row" | grep -oP '(?<=<)https?://[^>]+(?=>)' || true)"
+sum="$(echo "$row" | grep -oP '(?<=`)[a-f0-9]{128}(?=`)' || true)"
+if [ -z "$url" ] || [ -z "$sum" ]; then
+    say "could not read the proton-drive entry for $platform. Install it yourself from https://proton.me/drive/download"
+    exit 0
+fi
+
+say "downloading proton-drive ($platform)"
+if ! curl -fSL --max-time 300 -o "$tmpdir/proton-drive" "$url"; then
+    say "the download failed. Install proton-drive yourself from https://proton.me/drive/download"
+    exit 0
+fi
+
+actual="$(sha512sum "$tmpdir/proton-drive" | awk '{print $1}')"
+if [ "$actual" != "$sum" ]; then
+    say "CHECKSUM MISMATCH: the download was not installed. Expected $sum, got $actual."
+    exit 0
+fi
+
+install -m 0755 "$tmpdir/proton-drive" "$CLI_BIN"
+mkdir -p "$(dirname "$MARKER")"
+: > "$MARKER"
+say "installed proton-drive to $CLI_BIN (SHA-512 verified)"
+exit 0
+POSTINST_EOF
+
+# Removing the package keeps the CLI (you may use it on its own). Purging
+# removes the copy this package installed, and nothing else.
+cat > "$PKGROOT/DEBIAN/postrm" << 'POSTRM_EOF'
+#!/bin/sh
+set -e
+
+MARKER=/usr/share/protondrive-gui/cli-installed-by-package
+
+if [ "$1" = "purge" ] && [ -f "$MARKER" ]; then
+    rm -f /usr/local/bin/proton-drive "$MARKER"
+    rmdir /usr/share/protondrive-gui 2>/dev/null || true
+fi
+exit 0
+POSTRM_EOF
+chmod 755 "$PKGROOT/DEBIAN/postinst" "$PKGROOT/DEBIAN/postrm"
+
 cat > "$PKGROOT/DEBIAN/control" << CONTROL
 Package: $NAME
 Version: $VERSION
@@ -147,13 +232,17 @@ Depends: $DEPENDS
 Section: utils
 Priority: optional
 Homepage: $HOMEPAGE
+Bugs: $HOMEPAGE/issues
 Description: Desktop client for Proton Drive
  Browse, upload, download and organise your Proton Drive files from a desktop
  window, built on top of Proton's official command-line client.
  .
- This package does not include the official "proton-drive" command-line
- client, which has to be installed separately from
- https://proton.me/drive/download. Not affiliated with Proton AG.
+ When installed, the package downloads Proton's command-line client
+ (proton-drive) from proton.me and checks its SHA-512 against the published
+ value. If the CLI is already installed it is left alone. If anything fails,
+ the app still installs and the message says where to get the CLI.
+ .
+ Not affiliated with Proton AG.
 CONTROL
 
 say "Building the .deb"
@@ -165,4 +254,4 @@ dpkg-deb --info "$OUT" | sed -n '1,/^ Description/p'
 echo
 say "Done: dist/$(basename "$OUT")  ($(du -h "$OUT" | cut -f1))"
 echo "Install with:  sudo apt install ./dist/$(basename "$OUT")"
-echo "Still requires the official proton-drive CLI on PATH at runtime."
+echo "The package downloads the official proton-drive CLI during installation (needs internet)."

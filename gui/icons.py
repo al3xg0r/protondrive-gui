@@ -314,7 +314,13 @@ def draw_chevron_down(p: QPainter, s: int):
     _line(p, s * 0.5, s * 0.64, s * 0.74, s * 0.36)
 
 
+def draw_sort(p: QPainter, s: int):
+    for y, right in ((0.3, 0.84), (0.5, 0.64), (0.7, 0.44)):
+        _line(p, s * 0.16, s * y, s * right, s * y)
+
+
 DRAWERS = {
+    "sort": draw_sort,
     "chevron_right": draw_chevron_right,
     "chevron_down": draw_chevron_down,
     "back": draw_back,

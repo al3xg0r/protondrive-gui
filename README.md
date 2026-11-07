@@ -14,6 +14,7 @@ protocol and doesn't touch your login.
 
 - Browse My files with a folder tree in the sidebar; list or grid view
 - Upload (button or drag and drop), download with progress, move, copy, rename
+- Sort by name, size or date
 - Copy, cut and paste; new folder and new file; move to Trash
 - Trash: restore, delete permanently, empty trash
 - Photos with real file names and sizes
@@ -28,7 +29,8 @@ Pick one. Each needs the official `proton-drive` CLI as well.
 
 - **Debian, Ubuntu, Linux Mint**: download the `.deb` from the
   [Releases page](https://github.com/al3xg0r/protondrive-gui/releases) and run
-  `sudo apt install ./protondrive-gui_<version>_amd64.deb`.
+  `sudo apt install ./protondrive-gui_<version>_amd64.deb`. It also installs the
+  official CLI, checked against Proton's SHA-512.
 - **Any Linux**: download the AppImage from the
   [latest release](https://github.com/al3xg0r/protondrive-gui/releases/latest),
   make it executable and run it.
@@ -53,6 +55,16 @@ Issues and pull requests are welcome. The GUI (`gui/main_window.py`) and the CLI
 wrapper (`gui/cli.py`) are kept apart on purpose, so most changes touch only one
 of them.
 
+## Support Development
+
+My open-source projects are built independently and remain accessible to everyone.
+
+If you find these tools useful and would like to support their continued development, maintenance, and new features, you can support me on Patreon.
+
+Every contribution helps me dedicate more time to building and improving open-source software.
+
+[Support on Patreon](https://www.patreon.com/al3xg0r)
+
 ## License
 
 [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
@@ -64,9 +76,3 @@ software must keep the notice pointing back to this repository. See
 This is not an OSI-approved open-source license, because OSI's definition
 requires allowing commercial use. This isn't legal advice; if it matters for
 your situation, check with someone qualified.
-
----
-
-No Proton account yet? Proton Drive is free to start. If you sign up through
-[my referral link](https://pr.tn/ref/H3Y6DHT7), it costs you nothing extra and
-gives me a little credit. Entirely optional.

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import urllib.request
+from pathlib import Path
 
 REPO = "al3xg0r/protondrive-gui"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -39,3 +41,39 @@ def compare(current: str, latest: str) -> str:
     if lat > cur:
         return "newer"
     return "same" if lat == cur else "older"
+
+
+def _changelog_path() -> Path | None:
+    """CHANGELOG.md next to the project when run from source, or bundled at the
+    top of the frozen app (the AppImage and .deb builds add it)."""
+    candidates = [Path(__file__).resolve().parent.parent / "CHANGELOG.md"]
+    if getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"):
+        candidates.insert(0, Path(getattr(sys, "_MEIPASS", ".")) / "CHANGELOG.md")
+    return next((c for c in candidates if c.is_file()), None)
+
+
+def latest_changelog_entry(current_version: str) -> tuple[str, list[str]] | None:
+    """Returns (version, bullet points) for this version's changelog entry, or the
+    newest entry if this version has none. None if the file can't be read."""
+    path = _changelog_path()
+    if path is None:
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    entries = []
+    for match in re.finditer(r"^## (\S+)\s*\n(.*?)(?=^## |\Z)", text, flags=re.M | re.S):
+        bullets = []
+        for line in match.group(2).splitlines():
+            if line.startswith("- "):
+                bullets.append(line[2:].strip())
+            elif bullets and line.strip() and line.startswith("  "):
+                bullets[-1] += " " + line.strip()  # wrapped continuation line
+        entries.append((match.group(1), bullets))
+    if not entries:
+        return None
+    for version, bullets in entries:
+        if version == current_version:
+            return version, bullets
+    return entries[0]

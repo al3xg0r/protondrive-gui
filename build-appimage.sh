@@ -41,6 +41,7 @@ say "Freezing the app with PyInstaller (this can take a few minutes)"
 pyinstaller \
     --noconfirm \
     --windowed \
+    --add-data "$PROJECT_DIR/CHANGELOG.md:." \
     --name protondrive-gui \
     --distpath "$BUILD_DIR/dist" \
     --workpath "$BUILD_DIR/work" \

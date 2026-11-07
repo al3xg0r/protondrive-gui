@@ -3,6 +3,16 @@
 Notable changes per release. The full list is in the
 [GitHub releases](https://github.com/al3xg0r/protondrive-gui/releases).
 
+## 1.5.0
+
+- Sort files by name, size or date modified: click a column heading or use the
+  sort button above the list. Click again to reverse the order. Photos has its
+  own sort, newest first by default. The choice is remembered.
+- The `.deb` package now downloads the official CLI during installation and
+  checks its SHA-512 checksum, the same way `install.sh` does. If anything
+  fails, the app still installs and tells you where to get the CLI.
+- About shows what's new in the current version.
+
 ## 1.4.0
 
 - Folder colours, kept on this computer, shown in the list, grid and tree.

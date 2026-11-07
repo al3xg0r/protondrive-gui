@@ -40,5 +40,6 @@
   [features](features.md#privacy-and-local-data).
 - Light and dark themes, remembered view and window settings.
 - Account email in the toolbar.
+- Sorting by name, size or date, with saved choices.
 - About with version checks for the app and the CLI.
 - Packaging: AppImage, `.deb` and an install script.

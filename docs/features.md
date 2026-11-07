@@ -14,6 +14,10 @@ What the app does today. Anything not listed here is on the
   tree.
 - **Breadcrumbs** with Back and Refresh, plus **Go to path…** for typing a path
   directly.
+- **Sorting** by name, size or date modified. Click a column heading, or use
+  the sort button above the list; a second click reverses the order. Folders
+  stay in front in My files. Photos has its own sort, newest first by default.
+  Choices are remembered.
 - **List and grid views**, remembered across launches. Folders are amber
   unless you give them a colour; photos, videos, spreadsheets, archives, audio
   and other files each have their own icon colour, the same in every section.
@@ -63,7 +67,8 @@ What the app does today. Anything not listed here is on the
   The app doesn't follow the system theme automatically.
 - Context menus and dialogs are styled to match the app.
 - **About** shows the app version and the installed CLI version, and says
-  whether a newer version of either is out. Each has a link to download it.
+  whether a newer version of either is out. Each has a link to download it. It
+  also shows what's new in the current version, from the changelog.
 
 ## Privacy and local data
 
