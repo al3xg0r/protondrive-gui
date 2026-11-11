@@ -19,9 +19,12 @@ from PySide6.QtWidgets import (
     QProxyStyle,
     QStyle,
     QApplication,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QLayout,
     QHeaderView,
     QInputDialog,
     QLabel,
@@ -354,6 +357,39 @@ class FolderTree(QTreeWidget):
 
     def minimumSizeHint(self):
         return QSize(0, 0)
+
+
+class AboutDialog(QDialog):
+    """The About window. It is a plain dialog rather than a QMessageBox because
+    QMessageBox turns word wrap off whenever the text fits its own limit, which
+    depends on the screen size, so the list of changes was cut off on large
+    screens. Here the text always wraps at a fixed width."""
+
+    TEXT_WIDTH = 460
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("About Proton Drive GUI")
+        layout = QVBoxLayout(self)
+        layout.setSizeConstraint(QLayout.SetFixedSize)
+        layout.setContentsMargins(20, 16, 20, 14)
+        self._label = QLabel()
+        self._label.setTextFormat(Qt.RichText)
+        self._label.setWordWrap(True)
+        self._label.setFixedWidth(self.TEXT_WIDTH)
+        self._label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self._label.setOpenExternalLinks(True)
+        layout.addWidget(self._label)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    def setText(self, html_text: str):
+        self._label.setText(html_text)
+        self.adjustSize()
+
+    def text(self) -> str:
+        return self._label.text()
 
 
 class _ColourSubmenu:
@@ -2205,12 +2241,15 @@ class MainWindow(QMainWindow):
         entry = updates.latest_changelog_entry(__version__)
         if entry and entry[1]:
             version, bullets = entry
+            # `code` in the changelog is Markdown; show it as monospace instead of
+            # leaving the backticks in the text.
             items = "".join(
-                f"<li>{html.escape(text)}</li>" for text in bullets[:6]
+                "<li>" + re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text)) + "</li>"
+                for text in bullets[:6]
             )
             whats_new = (
                 f"<p style='margin:0 0 4px 0'>What's new in v{html.escape(version)}</p>"
-                f"<ul style='margin:0 0 12px 18px'>{items}</ul>"
+                f"<ul style='margin-top:0px; margin-bottom:12px; margin-left:0px; -qt-list-indent:1;'>{items}</ul>"
             )
         return (
             f"<p style='margin:0 0 12px 0'>{gui_line}</p>"
@@ -2223,20 +2262,8 @@ class MainWindow(QMainWindow):
         )
 
     def show_about(self):
-        box = QMessageBox(self)
-        box.setWindowTitle("About Proton Drive GUI")
-        box.setTextFormat(Qt.RichText)
+        box = AboutDialog(self)
         box.setText(self._about_text(update_line="Checking for updates\u2026"))
-        label = box.findChild(QLabel, "qt_msgbox_label")
-        if label is not None:
-            label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-            label.setOpenExternalLinks(True)
-            # The dialog is sized by the first text ("Checking for updates\u2026") and
-            # does not grow when the result replaces it, so the version lines
-            # would wrap. A minimum width keeps each of them on one line.
-            label.setWordWrap(True)
-            # QMessageBox ignores its own minimum width; the label's minimum sets the dialog's.
-            label.setMinimumWidth(440)
         self._start_worker(
             updates.fetch_latest,
             on_finished=lambda result: self._about_update_result(box, result),
@@ -2244,7 +2271,7 @@ class MainWindow(QMainWindow):
         )
         box.exec()
 
-    def _about_update_result(self, box: QMessageBox, result):
+    def _about_update_result(self, box: AboutDialog, result):
         if not box.isVisible():
             return
         if result is None:
@@ -2259,7 +2286,6 @@ class MainWindow(QMainWindow):
             else:
                 line = "You have the latest version."
         box.setText(self._about_text(update_line=line))
-        box.adjustSize()
 
     # -- upload / download -------------------------------------------------------
 
