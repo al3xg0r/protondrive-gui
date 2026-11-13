@@ -325,7 +325,7 @@ REPO_URL = "https://github.com/al3xg0r/protondrive-gui"
 ABOUT_LINKS = [
     ("Project on GitHub", REPO_URL),
     ("Report a bug", f"{REPO_URL}/issues/new"),
-    ("Support the project", "https://patreon.com/al3xg0r"),
+    ("Support the project", "https://nowpayments.io/donation/al3xg0r"),
 ]
 
 
