@@ -76,4 +76,6 @@ def latest_changelog_entry(current_version: str) -> tuple[str, list[str]] | None
     for version, bullets in entries:
         if version == current_version:
             return version, bullets
-    return entries[0]
+    # No entry for this version: use the newest numbered one, never "Unreleased".
+    numbered = [entry for entry in entries if entry[0][:1].isdigit()]
+    return (numbered or entries)[0]

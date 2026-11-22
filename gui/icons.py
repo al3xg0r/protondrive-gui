@@ -319,7 +319,13 @@ def draw_sort(p: QPainter, s: int):
         _line(p, s * 0.16, s * y, s * right, s * y)
 
 
+def draw_plus(p: QPainter, s: int):
+    _line(p, s * 0.5, s * 0.2, s * 0.5, s * 0.8)
+    _line(p, s * 0.2, s * 0.5, s * 0.8, s * 0.5)
+
+
 DRAWERS = {
+    "plus": draw_plus,
     "sort": draw_sort,
     "chevron_right": draw_chevron_right,
     "chevron_down": draw_chevron_down,

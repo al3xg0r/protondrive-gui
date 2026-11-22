@@ -13,7 +13,7 @@ protocol and doesn't touch your login.
 ## What it does
 
 - Browse My files with a folder tree in the sidebar; list or grid view
-- Upload (button or drag and drop), download with progress, move, copy, rename
+- Upload files and folders (a **+ New** menu like the web app's, the Upload button, or drag and drop), download with progress, move, copy, rename
 - Sort by name or date
 - Copy, cut and paste; new folder and new file; move to Trash
 - Trash: restore, delete permanently, empty trash
@@ -59,11 +59,11 @@ of them.
 
 My open-source projects are built independently and remain accessible to everyone.
 
-If you find these tools useful and would like to support their continued development, maintenance, and new features, you can support me on Patreon.
+If you find these tools useful and would like to support their continued development, maintenance, and new features, you can support me on Patreon or through NOWPayments.
 
 Every contribution helps me dedicate more time to building and improving open-source software.
 
-[Support on Patreon](https://www.patreon.com/al3xg0r)
+[Support on Patreon](https://www.patreon.com/al3xg0r) · [Donate via NOWPayments](https://nowpayments.io/donation/al3xg0r)
 
 ## License
 

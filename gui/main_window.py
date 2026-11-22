@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QSettings, QSize, Qt, QThreadPool, QTimer
+from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QPoint, QSettings, QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -198,12 +198,12 @@ _SIDEBAR_STYLESHEET = """
     QToolButton { text-align: left; padding: 6px 8px; border: none; border-radius: 5px; }
     QToolButton:hover { background: palette(alternate-base); }
     QToolButton:checked { background: palette(highlight); color: palette(highlighted-text); }
-    QToolButton#newFolderButton {
+    QToolButton#newButton {
         background: #1f9d55; color: #ffffff;
         font-weight: bold; padding: 8px;
     }
-    QToolButton#newFolderButton:hover { background: #24b563; }
-    QToolButton#newFolderButton:disabled { background: palette(mid); color: palette(dark); }
+    QToolButton#newButton:hover { background: #24b563; }
+    QToolButton#newButton:disabled { background: palette(mid); color: palette(dark); }
     QTreeWidget { background: transparent; border: none; outline: none; }
     QTreeWidget QScrollBar:vertical { background: transparent; border: none; width: 8px; margin: 2px 0; }
     QTreeWidget QScrollBar::handle:vertical { background: transparent; border: none; min-height: 24px; border-radius: 4px; }
@@ -744,17 +744,18 @@ class MainWindow(QMainWindow):
         self._sidebar = sidebar
         sidebar.installEventFilter(self)
 
-        self.new_folder_action = QAction(
+        self.new_action = QAction(
             self._stateful_icon(
-                "new_folder",
+                "plus",
                 normal_color=QColor("#ffffff"),
                 disabled_color=self._applied_palette().color(QPalette.Disabled, QPalette.WindowText),
             ),
-            "New folder",
+            "New",
             self,
         )
-        self.new_folder_action.triggered.connect(self.create_folder)
-        sidebar_layout.addWidget(self._sidebar_button(self.new_folder_action, "newFolderButton"))
+        self.new_action.triggered.connect(self._show_new_menu)
+        self._new_button = self._sidebar_button(self.new_action, "newButton")
+        sidebar_layout.addWidget(self._new_button)
         sidebar_layout.addSpacing(10)
 
         highlighted_text = self._applied_palette().color(QPalette.HighlightedText)
@@ -1485,7 +1486,7 @@ class MainWindow(QMainWindow):
 
     def _apply_root_ui_state(self, root: str):
         self.goto_path_button.setEnabled(root != PHOTOS_ROOT)
-        self.new_folder_action.setEnabled(root == MY_FILES_ROOT)
+        self.new_action.setEnabled(root == MY_FILES_ROOT)
         self.upload_action.setEnabled(root not in (TRASH_ROOT, SHARED_WITH_ME_ROOT))
         self.empty_trash_action.setVisible(root == TRASH_ROOT)
         for r, action in self.root_actions.items():
@@ -1641,6 +1642,34 @@ class MainWindow(QMainWindow):
             if chosen is action and handler is not None:
                 handler()
                 return
+
+    def _show_new_menu(self):
+        """The "+ New" menu, laid out like the web app's: uploads first, then
+        creating things. The web app also offers New document and New
+        spreadsheet; the CLI has no command to create those, so they're left out."""
+        if not self.cli or self.current_root != MY_FILES_ROOT:
+            return
+        menu = QMenu(self)
+        menu.setMinimumWidth(self._new_button.width())
+        upload_file = menu.addAction(self._icon("upload", size=16), "Upload file\u2026")
+        upload_folder = menu.addAction(self._icon("folder", size=16), "Upload folder\u2026")
+        menu.addSeparator()
+        new_folder = menu.addAction(self._icon("new_folder", size=16), "New folder\u2026")
+        new_file = menu.addAction(self._icon("file", size=16), "New file\u2026")
+        chosen = menu.exec(self._new_button.mapToGlobal(QPoint(0, self._new_button.height() + 2)))
+        if chosen is upload_file:
+            self.upload_files()
+        elif chosen is upload_folder:
+            self._upload_folder()
+        elif chosen is new_folder:
+            self.create_folder()
+        elif chosen is new_file:
+            self._new_file()
+
+    def _upload_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Choose a folder to upload")
+        if folder:
+            self._upload_paths([folder])
 
     def _open_background_menu(self, global_pos):
         if self.current_root != MY_FILES_ROOT or not self.cli:

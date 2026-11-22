@@ -3,6 +3,12 @@
 Notable changes per release. The full list is in the
 [GitHub releases](https://github.com/al3xg0r/protondrive-gui/releases).
 
+## Unreleased
+
+- A **+ New** menu in the sidebar, like the web app's: Upload file, Upload
+  folder, New folder and New file. New document and New spreadsheet aren't
+  offered, because the CLI can't create Proton's own documents.
+
 ## 1.5.0
 
 - Sort files by name or date modified: click the Name or Modified heading, or use

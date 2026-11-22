@@ -22,6 +22,8 @@
 ## Not planned, or blocked by the CLI
 
 - **Account storage quota**: no CLI command for it (see [CLI notes](cli.md)).
+- **New document and New spreadsheet** in the New menu: the CLI can't create
+  Proton's own documents (see [CLI notes](cli.md)).
 - **Image thumbnails in Photos**: the CLI can't return them. Fetching full files
   just to draw a grid would be slow and use a lot of data, so the app doesn't
   do it silently.
@@ -32,6 +34,7 @@
 - Browsing, uploading, downloading, moving, copying, renaming and trashing in
   My files, with a progress bar for transfers.
 - Photos with real names and sizes.
+- A **+ New** menu like the web app's, with file and folder upload.
 - Trash: restore, permanent delete, empty trash, each with confirmation.
 - Expandable folder tree under My files.
 - Folder sizes, folder colours, copy/cut/paste, a right-click menu for empty

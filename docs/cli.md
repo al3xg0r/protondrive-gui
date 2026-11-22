@@ -54,6 +54,9 @@ Pull requests that fix this for real-world output are welcome.
   `photo download`.
 - **Creating an empty file.** Not a command. The app uploads an empty local file
   under the name you choose.
+- **Creating Proton documents and spreadsheets.** No command appears in the
+  help for the web app's New document and New spreadsheet, so the app's New
+  menu doesn't offer them.
 - **Setting a folder colour.** Not a command. Colours are kept locally (see
   [features](features.md#privacy-and-local-data)).
 

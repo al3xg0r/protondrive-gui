@@ -5,9 +5,9 @@ What the app does today. Anything not listed here is on the
 
 ## Browsing
 
-- **Sidebar**: New folder, My files, Photos, Trash, Shared by me, Shared with
-  me. The current section is highlighted. Log in / out, the theme switch and
-  About sit at the bottom. In a narrow window it shows icons only.
+- **Sidebar**: a **+ New** button, then My files, Photos, Trash, Shared by me,
+  Shared with me. The current section is highlighted. Log in / out, the theme
+  switch and About sit at the bottom. In a narrow window it shows icons only.
 - **Folder tree under My files**: click the arrow next to My files to show your
   folders. Expand any folder to load its subfolders. An arrow appears only on
   folders that have subfolders. A scrollbar appears while the pointer is over the
@@ -35,8 +35,11 @@ What the app does today. Anything not listed here is on the
 
 ## Files and folders
 
-- **Upload**: the Upload button, or drag files onto the window. In My files you
-  can also drag whole folders. Photos accepts files only.
+- **+ New menu** (in My files), laid out like the web app's: Upload file, Upload
+  folder, New folder, New file. The web app's New document and New spreadsheet
+  aren't offered, because the CLI can't create Proton's own documents.
+- **Upload**: the Upload button, the New menu, or drag files onto the window.
+  In My files you can also drag whole folders. Photos accepts files only.
 - **Download** a selection to a folder you choose, with a progress bar. The
   progress bar reads the CLI's live output, which isn't a documented format, so
   it can stop working after a CLI update.
