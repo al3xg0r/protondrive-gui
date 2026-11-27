@@ -2270,10 +2270,10 @@ class MainWindow(QMainWindow):
         entry = updates.latest_changelog_entry(__version__)
         if entry and entry[1]:
             version, bullets = entry
-            # `code` in the changelog is Markdown; show it as monospace instead of
-            # leaving the backticks in the text.
+            # The changelog is Markdown: show `code` as monospace and drop the **bold**
+            # markers, so neither leaves stray punctuation in the text.
             items = "".join(
-                "<li>" + re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text)) + "</li>"
+                "<li>" + re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text.replace("**", ""))) + "</li>"
                 for text in bullets[:6]
             )
             whats_new = (

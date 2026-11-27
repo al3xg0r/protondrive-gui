@@ -3,7 +3,7 @@
 Notable changes per release. The full list is in the
 [GitHub releases](https://github.com/al3xg0r/protondrive-gui/releases).
 
-## Unreleased
+## 1.6.0
 
 - A **+ New** menu in the sidebar, like the web app's: Upload file, Upload
   folder, New folder and New file. New document and New spreadsheet aren't
